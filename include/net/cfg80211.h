@@ -526,6 +526,10 @@ enum station_parameters_apply_mask {
  * @capability: station capability
  * @ext_capab: extended capabilities of the station
  * @ext_capab_len: number of extended capabilities
+ * @supported_channels: supported channels in IEEE 802.11 format
+ * @supported_channels_len: number of supported channels
+ * @supported_oper_classes: supported oper classes in IEEE 802.11 format
+ * @supported_oper_classes_len: number of supported operating classes
  */
 struct station_parameters {
 	u8 *supported_rates;

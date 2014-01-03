@@ -1449,6 +1449,7 @@ enum nl80211_commands {
  * @NL80211_ATTR_STA_SUPPORTED_OPER_CLASSES: array of supported
  *      supported operating classes.
  *
+<<<<<<< HEAD
  * @NL80211_ATTR_HANDLE_DFS: A flag indicating whether user space
  *	controls DFS operation in IBSS mode. If the flag is included in
  *	%NL80211_CMD_JOIN_IBSS request, the driver will allow use of DFS
@@ -1481,6 +1482,8 @@ enum nl80211_commands {
  * @NL80211_ATTR_TDLS_PEER_CAPABILITY: flags for TDLS peer capabilities, u32.
  *	As specified in the &enum nl80211_tdls_peer_capability.
  *
+=======
+>>>>>>> 23a9c6c... cfg80211: pass station supported channel and oper class info
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
