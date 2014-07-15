@@ -150,7 +150,10 @@ int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
 	int i;
 	bool high;
 
-	high = gfp_mask & __GFP_HIGHMEM;
+	if (current_is_kswapd())
+		high = 1;
+	else
+		high = !!(gfp_mask & __GFP_HIGHMEM);
 
 	if (current_is_kswapd())
 		high = 1;
