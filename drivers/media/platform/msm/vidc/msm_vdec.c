@@ -21,12 +21,7 @@
 
 #define MSM_VDEC_DVC_NAME "msm_vdec_8974"
 #define MIN_NUM_OUTPUT_BUFFERS 4
-#if defined(CONFIG_MACH_KLTE_DCM)
-//Kishore MSM Patch https://www.codeaurora.org/cgit/quic/la//kernel/msm/commit/?id=0b07789494d4d3a96bba5d60e6783ae6ea69ecf5
-#define MAX_NUM_OUTPUT_BUFFERS VIDEO_MAX_FRAME
-#else
-#define MAX_NUM_OUTPUT_BUFFERS 6
-#endif /* defined(CONFIG_MACH_KLTE_DCM) */
+#define MAX_NUM_OUTPUT_BUFFERS VB2_MAX_FRAME
 #define DEFAULT_VIDEO_CONCEAL_COLOR_BLACK 0x8010
 #define MB_SIZE_IN_PIXEL (16 * 16)
 
