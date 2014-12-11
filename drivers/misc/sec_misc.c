@@ -63,7 +63,7 @@ static struct miscdevice sec_misc_device = {
 static ssize_t emmc_checksum_done_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, sizeof(buf), "%d\n", emmc_checksum_done);
+	return sprintf(buf, "%d\n", emmc_checksum_done);
 }
 
 static ssize_t emmc_checksum_done_store(struct device *dev,
@@ -84,7 +84,7 @@ static DEVICE_ATTR(emmc_checksum_done, S_IRUGO | S_IWUSR ,
 static ssize_t emmc_checksum_pass_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, sizeof(buf), "%d\n", emmc_checksum_pass);
+	return sprintf(buf, "%d\n", emmc_checksum_pass);
 }
 
 static ssize_t emmc_checksum_pass_store(struct device *dev,
@@ -112,7 +112,7 @@ static ssize_t rory_control_show(struct device *dev,
 
 	sec_get_param(param_rory_control, &rory_control);
 
-	return snprintf(buf, sizeof(buf), "%d\n", rory_control);
+	return sprintf(buf, "%d\n", rory_control);
 }
 
 static ssize_t rory_control_store(struct device *dev,
@@ -235,7 +235,7 @@ static ssize_t drop_caches_show
 	(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
-	return snprintf(buf, sizeof(buf), "%d\n", ret);
+	return sprintf(buf, "%d\n", ret);
 }
 
 static ssize_t drop_caches_store
@@ -272,6 +272,7 @@ static DEVICE_ATTR(drop_caches, S_IRUGO | S_IWUSR | S_IWGRP,\
  * End Drop Caches
  */
 
+
 /*
  * For external CP download
  */
@@ -283,7 +284,7 @@ static ssize_t update_cp_bin_show
 
 	sec_get_param(param_update_cp_bin, (void *)&update);
 
-	return snprintf(buf, sizeof(buf), "%d\n", update);
+	return sprintf(buf, "%d\n", update);
 }
 
 static ssize_t update_cp_bin_store
@@ -300,7 +301,6 @@ static ssize_t update_cp_bin_store
 static DEVICE_ATTR(update_cp_bin, S_IRUGO | S_IWUSR | S_IWGRP,\
 			update_cp_bin_show, update_cp_bin_store);
 #endif
-
 
 struct device *sec_misc_dev;
 
