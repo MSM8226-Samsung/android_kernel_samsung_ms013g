@@ -624,7 +624,7 @@ static int kgsl_suspend_device(struct kgsl_device *device, pm_message_t state)
 
 	KGSL_PWR_WARN(device, "suspend start\n");
 
-	mutex_lock(&device->mutex);
+	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
 	kgsl_pwrctrl_request_state(device, KGSL_STATE_SUSPEND);
 
 	/* Tell the device to drain the submission queue */
@@ -679,7 +679,7 @@ end:
 			device->ftbl->resume(device);
 	}
 
-	mutex_unlock(&device->mutex);
+	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 	KGSL_PWR_WARN(device, "suspend end\n");
 	return status;
 }
@@ -690,7 +690,7 @@ static int kgsl_resume_device(struct kgsl_device *device)
 		return -EINVAL;
 
 	KGSL_PWR_WARN(device, "resume start\n");
-	mutex_lock(&device->mutex);
+	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
 	if (device->state == KGSL_STATE_SUSPEND) {
 		kgsl_pwrctrl_set_state(device, KGSL_STATE_SLUMBER);
 		complete_all(&device->hwaccess_gate);
@@ -714,7 +714,7 @@ static int kgsl_resume_device(struct kgsl_device *device)
 	if (device->ftbl->resume)
 		device->ftbl->resume(device);
 
-	mutex_unlock(&device->mutex);
+	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 	KGSL_PWR_WARN(device, "resume end\n");
 	return 0;
 }
@@ -949,7 +949,7 @@ static int kgsl_release(struct inode *inodep, struct file *filep)
 
 	filep->private_data = NULL;
 
-	mutex_lock(&device->mutex);
+	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
 
 	while (1) {
 		read_lock(&device->context_lock);
@@ -1001,7 +1001,7 @@ static int kgsl_release(struct inode *inodep, struct file *filep)
 	kgsl_cancel_events(device, dev_priv);
 
 	result = kgsl_close_device(device);
-	mutex_unlock(&device->mutex);
+	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 
 	kfree(dev_priv);
 
@@ -1083,12 +1083,12 @@ static int kgsl_open(struct inode *inodep, struct file *filep)
 	dev_priv->device = device;
 	filep->private_data = dev_priv;
 
-	mutex_lock(&device->mutex);
+	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
 
 	result = kgsl_open_device(device);
 	if (result)
 		goto err_freedevpriv;
-	mutex_unlock(&device->mutex);
+	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 
 	/*
 	 * Get file (per process) private struct. This must be done
@@ -1108,7 +1108,7 @@ static int kgsl_open(struct inode *inodep, struct file *filep)
 	return result;
 
 err_stop:
-	mutex_lock(&device->mutex);
+	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
 	device->open_count--;
 	if (device->open_count == 0) {
 		/* make sure power is on to stop the device */
@@ -1118,7 +1118,7 @@ err_stop:
 		atomic_dec(&device->active_cnt);
 	}
 err_freedevpriv:
-	mutex_unlock(&device->mutex);
+	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 	filep->private_data = NULL;
 	kfree(dev_priv);
 err_pmruntime:
@@ -1375,8 +1375,8 @@ static long kgsl_ioctl_device_setproperty(struct kgsl_device_private *dev_priv,
 
 	if (dev_priv->device->ftbl->setproperty)
 		result = dev_priv->device->ftbl->setproperty(
-			dev_priv->device, param->type,
-			param->value, param->sizebytes);
+			dev_priv, param->type, param->value,
+			param->sizebytes);
 
 	return result;
 }
@@ -1702,10 +1702,10 @@ static int kgsl_cmdbatch_add_sync_timestamp(struct kgsl_device *device,
 	list_add(&event->node, &cmdbatch->synclist);
 	spin_unlock(&cmdbatch->lock);
 
-	mutex_lock(&device->mutex);
+	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
 	ret = kgsl_add_event(device, context->id, sync->timestamp,
 		kgsl_cmdbatch_sync_func, event, NULL);
-	mutex_unlock(&device->mutex);
+	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
 
 	if (ret) {
 		spin_lock(&cmdbatch->lock);
@@ -3438,12 +3438,14 @@ static long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 	}
 
 	if (lock)
-		mutex_lock(&dev_priv->device->mutex);
+		kgsl_mutex_lock(&dev_priv->device->mutex,
+			&dev_priv->device->mutex_owner);
 
 	ret = func(dev_priv, cmd, uptr);
 
 	if (lock)
-		mutex_unlock(&dev_priv->device->mutex);
+		kgsl_mutex_unlock(&dev_priv->device->mutex,
+			&dev_priv->device->mutex_owner);
 
 	/*
 	 * Still copy back on failure, but assume function took
@@ -3735,6 +3737,18 @@ static int kgsl_mmap(struct file *file, struct vm_area_struct *vma)
 
 	vma->vm_private_data = entry;
 
+#ifdef CONFIG_TIMA_RKP
+	if (vma->vm_end - vma->vm_start) {
+		/* iommu optimization- needs to be turned ON from
+		* the tz side.
+		*/
+		cpu_v7_tima_iommu_opt(vma->vm_start, vma->vm_end, (unsigned long)vma->vm_mm->pgd);
+		__asm__ __volatile__ (
+		"mcr    p15, 0, r0, c8, c3, 0\n"
+		"dsb\n"
+		"isb\n");
+	}
+#endif
 	/* Determine user-side caching policy */
 
 	cache = kgsl_memdesc_get_cachemode(&entry->memdesc);
@@ -3921,6 +3935,8 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 		if (res == NULL) {
 			KGSL_DRV_ERR(device,
 			"Shader memory: platform_get_resource_byname failed\n");
+			status = -ENODEV;
+			goto error_pwrctrl_close;
 		}
 
 		else {
@@ -3933,6 +3949,8 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 					device->shader_mem_len,
 						device->name)) {
 			KGSL_DRV_ERR(device, "request_mem_region_failed\n");
+			status = -ENODEV;
+			goto error_pwrctrl_close;
 		}
 	}
 

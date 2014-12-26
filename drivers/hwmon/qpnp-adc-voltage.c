@@ -120,6 +120,8 @@ struct qpnp_vadc_chip {
 
 LIST_HEAD(qpnp_vadc_device_list);
 
+struct qpnp_vadc_chip *qpnp_vadc;
+
 static struct qpnp_vadc_scale_fn vadc_scale_fn[] = {
 	[SCALE_DEFAULT] = {qpnp_adc_scale_default},
 	[SCALE_BATT_THERM] = {qpnp_adc_scale_batt_therm},
@@ -1099,6 +1101,8 @@ int32_t qpnp_vadc_conv_seq_request(struct qpnp_vadc_chip *vadc,
 		qpnp_vadc_amux_scaling_ratio[amux_prescaling].num;
 	vadc->adc->amux_prop->chan_prop->offset_gain_denominator =
 		 qpnp_vadc_amux_scaling_ratio[amux_prescaling].den;
+	vadc->adc->amux_prop->chan_prop->calib_type =
+		vadc->adc->adc_channels[dt_index].calib_type;
 
 	scale_type = vadc->adc->adc_channels[dt_index].adc_scale_fn;
 	if (scale_type >= SCALE_NONE) {
@@ -1127,6 +1131,9 @@ int32_t qpnp_vadc_read(struct qpnp_vadc_chip *vadc,
 {
 	struct qpnp_vadc_result die_temp_result;
 	int rc = 0;
+
+        if(vadc == NULL)
+                vadc = qpnp_vadc;
 
 	if (channel == VBAT_SNS) {
 		rc = qpnp_vadc_conv_seq_request(vadc, ADC_SEQ_NONE,
@@ -1366,6 +1373,7 @@ static int __devinit qpnp_vadc_probe(struct spmi_device *spmi)
 	}
 	mutex_init(&vadc->adc->adc_lock);
 
+        qpnp_vadc = vadc;
 	rc = qpnp_vadc_init_hwmon(vadc, spmi);
 	if (rc) {
 		dev_err(&spmi->dev, "failed to initialize qpnp hwmon adc\n");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,10 +16,14 @@
 
 #include <linux/regulator/machine.h>
 
+#ifdef CONFIG_ARCH_MSM8226
+#define CPR_REGULATOR_DRIVER_NAME	"qcom,cpr-regulator"
+#else
 #define CPR_REGULATOR_DRIVER_NAME	"qti,cpr-regulator"
 
 #define CPR_PVS_EFUSE_BITS_MAX		5
 #define CPR_PVS_EFUSE_BINS_MAX		(1 << CPR_PVS_EFUSE_BITS_MAX)
+#endif
 
 /**
  * enum cpr_fuse_corner_enum - CPR fuse corner enum values
@@ -69,6 +73,7 @@ enum cpr_corner_enum {
 	CPR_CORNER_12,
 };
 
+#ifndef CONFIG_ARCH_MSM8226
 /**
  * enum pvs_process_enum - PVS process enum values
  * %APC_PVS_NO:		No PVS
@@ -83,6 +88,7 @@ enum apc_pvs_process_enum {
 	APC_PVS_FAST,
 	NUM_APC_PVS,
 };
+#endif
 
 /**
  * enum vdd_mx_vmin_method - Method to determine vmin for vdd-mx
@@ -91,12 +97,17 @@ enum apc_pvs_process_enum {
  * %VDD_MX_VMIN_APC_SLOW_CORNER_CEILING:
  *					Equal to slow speed corner ceiling
  * %VDD_MX_VMIN_MX_VMAX:		Equal to specified vdd-mx-vmax voltage
+ * %VDD_MX_VMIN_APC_CORNER_MAP:		Equal to the APC corner mapped MX
+ *					voltage
  */
 enum vdd_mx_vmin_method {
 	VDD_MX_VMIN_APC,
 	VDD_MX_VMIN_APC_CORNER_CEILING,
 	VDD_MX_VMIN_APC_SLOW_CORNER_CEILING,
 	VDD_MX_VMIN_MX_VMAX,
+#ifdef CONFIG_ARCH_MSM8226
+	VDD_MX_VMIN_APC_CORNER_MAP,
+#endif
 };
 
 #ifdef CONFIG_MSM_CPR_REGULATOR
