@@ -685,8 +685,7 @@ int output_buffer_cache_invalidate(struct msm_vidc_inst *inst,
 				return -EINVAL;
 			}
 		} else
-			dprintk(VIDC_DBG, "%s: NULL handle for plane %d\n",
-					__func__, i);
+			dprintk(VIDC_ERR, "%s: WARN: NULL handle", __func__);
 	}
 	return 0;
 }
