@@ -1429,13 +1429,12 @@ int create_pkt_cmd_session_set_property(
 		struct hfi_ltrmode *hfi;
 		struct hal_ltrmode *hal = pdata;
 		pkt->rg_property_data[0] =
-			HFI_PROPERTY_PARAM_VENC_LTRMODE;
+			HFI_PROPERTY_PARAM_VENC_H264_LTRMODE;
 		hfi = (struct hfi_ltrmode *) &pkt->rg_property_data[1];
 		hfi->ltrmode = get_hfi_ltr_mode(hal->ltrmode);
 		hfi->ltrcount = hal->ltrcount;
 		hfi->trustmode = hal->trustmode;
 		pkt->size += sizeof(u32) + sizeof(struct hfi_ltrmode);
-		pr_err("SET LTR\n");
 		break;
 	}
 	case HAL_CONFIG_VENC_USELTRFRAME:
@@ -1443,13 +1442,12 @@ int create_pkt_cmd_session_set_property(
 		struct hfi_ltruse *hfi;
 		struct hal_ltruse *hal = pdata;
 		pkt->rg_property_data[0] =
-			HFI_PROPERTY_CONFIG_VENC_USELTRFRAME;
+			HFI_PROPERTY_CONFIG_VENC_H264_USELTRFRAME;
 		hfi = (struct hfi_ltruse *) &pkt->rg_property_data[1];
 		hfi->frames = hal->frames;
 		hfi->refltr = hal->refltr;
 		hfi->useconstrnt = hal->useconstrnt;
 		pkt->size += sizeof(u32) + sizeof(struct hfi_ltruse);
-		pr_err("USE LTR\n");
 		break;
 	}
 	case HAL_CONFIG_VENC_MARKLTRFRAME:
@@ -1457,11 +1455,10 @@ int create_pkt_cmd_session_set_property(
 		struct hfi_ltrmark *hfi;
 		struct hal_ltrmark *hal = pdata;
 		pkt->rg_property_data[0] =
-			HFI_PROPERTY_CONFIG_VENC_MARKLTRFRAME;
+			HFI_PROPERTY_CONFIG_VENC_H264_MARKLTRFRAME;
 		hfi = (struct hfi_ltrmark *) &pkt->rg_property_data[1];
 		hfi->markframe = hal->markframe;
-		pkt->size += sizeof(u32) + sizeof(struct hfi_ltrmark);
-		pr_err("MARK LTR\n");
+		pkt->size += sizeof(u32) * 2;
 		break;
 	}
 	case HAL_PARAM_VPE_COLOR_SPACE_CONVERSION:

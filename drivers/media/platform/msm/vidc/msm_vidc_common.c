@@ -478,8 +478,6 @@ static void handle_session_init_done(enum command_response cmd, void *data)
 				session_init_done->frame_rate;
 			inst->capability.scale_x = session_init_done->scale_x;
 			inst->capability.scale_y = session_init_done->scale_y;
-			inst->capability.ltr_count =
-				session_init_done->ltr_count;
 			inst->capability.pixelprocess_capabilities =
 				call_hfi_op(hdev, get_core_capabilities);
 			inst->capability.mbs_per_frame =
