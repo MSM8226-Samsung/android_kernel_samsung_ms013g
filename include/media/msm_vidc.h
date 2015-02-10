@@ -165,10 +165,6 @@ struct msm_vidc_s3d_frame_packing_payload {
 struct msm_vidc_frame_qp_payload {
 	unsigned int frame_qp;
 };
-struct msm_vidc_frame_bits_info_payload {
-	unsigned int frame_bits;
-	unsigned int header_bits;
-};
 
 struct msm_vidc_stream_userdata_payload {
 	unsigned int type;
@@ -189,7 +185,6 @@ enum msm_vidc_extradata_type {
 	EXTRADATA_MPEG2_SEQDISP = 0x0000000D,
 	EXTRADATA_STREAM_USERDATA = 0x0000000E,
 	EXTRADATA_FRAME_QP = 0x0000000F,
-	EXTRADATA_FRAME_BITS_INFO = 0x00000010,
 	EXTRADATA_MULTISLICE_INFO = 0x7F100000,
 	EXTRADATA_NUM_CONCEALED_MB = 0x7F100001,
 	EXTRADATA_INDEX = 0x7F100002,
