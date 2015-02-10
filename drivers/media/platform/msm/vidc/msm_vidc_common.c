@@ -3174,12 +3174,6 @@ enum hal_extradata_id msm_comm_get_hal_extradata_index(
 	case V4L2_MPEG_VIDC_EXTRADATA_LTR:
 		ret = HAL_EXTRADATA_LTR_INFO;
 		break;
-	case V4L2_MPEG_VIDC_EXTRADATA_METADATA_MBI:
-		ret = HAL_EXTRADATA_METADATA_MBI;
-		break;
-	case V4L2_MPEG_VIDC_EXTRADATA_STREAM_USERDATA:
-		ret = HAL_EXTRADATA_STREAM_USERDATA;
-		break;
 	default:
 		dprintk(VIDC_WARN, "Extradata not found: %d\n", index);
 		break;
