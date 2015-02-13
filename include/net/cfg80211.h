@@ -542,6 +542,10 @@ struct station_parameters {
 	u16 capability;
 	u8 *ext_capab;
 	u8 ext_capab_len;
+	const u8 *supported_channels;
+	u8 supported_channels_len;
+	const u8 *supported_oper_classes;
+	u8 supported_oper_classes_len;
 };
 
 /**
@@ -2164,11 +2168,11 @@ struct wiphy_vendor_command {
  *	supports for ACL.
  * @country_ie_pref: country IE processing preferences specified
  *	by enum nl80211_country_ie_pref
- *
  * @vendor_commands: array of vendor commands supported by the hardware
  * @n_vendor_commands: number of vendor commands
  * @vendor_events: array of vendor events supported by the hardware
  * @n_vendor_events: number of vendor events
+ *
  */
 struct wiphy {
 	/* assign these fields before you register the wiphy */
@@ -3216,8 +3220,8 @@ void __cfg80211_send_event_skb(struct sk_buff *skb, gfp_t gfp);
 static inline struct sk_buff *
 cfg80211_vendor_cmd_alloc_reply_skb(struct wiphy *wiphy, int approxlen)
 {
-	return __cfg80211_alloc_reply_skb(wiphy, NL80211_CMD_TESTMODE,
-					  NL80211_ATTR_TESTDATA, approxlen);
+	return __cfg80211_alloc_reply_skb(wiphy, NL80211_CMD_VENDOR,
+					  NL80211_ATTR_VENDOR_DATA, approxlen);
 }
 
 /**
@@ -3305,6 +3309,7 @@ static inline void cfg80211_vendor_event(struct sk_buff *skb, gfp_t gfp)
  * When done, call cfg80211_testmode_reply() with the skb and return
  * its error code as the result of the @testmode_cmd operation.
  */
+
 static inline struct sk_buff *
 cfg80211_testmode_alloc_reply_skb(struct wiphy *wiphy, int approxlen)
 {

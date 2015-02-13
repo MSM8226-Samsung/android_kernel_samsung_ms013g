@@ -1,4 +1,4 @@
- /* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ /* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -50,10 +50,21 @@ static int msm_btsco_ch = 1;
 static int msm_proxy_rx_ch = 2;
 static struct platform_device *spdev;
 static int ext_spk_amp_gpio = -1;
+#if defined (CONFIG_EXT_MAINMIC_BIAS)
+static int ext_main_micbias_gpio = -1;
+#endif
+#if defined (CONFIG_EXT_SUBMIC_BIAS)
+static int ext_sub_micbias_gpio = -1;
+#endif
 
 /* pointers for digital codec register mappings */
 static void __iomem *pcbcr;
 static void __iomem *prcgr;
+
+//balaji.k: Enabling the MIC Bias Voltage of Earmic
+#ifdef CONFIG_SAMSUNG_JACK
+static struct snd_soc_jack hs_jack;
+#endif
 
 static int msm_sec_mi2s_rx_ch = 1;
 static int msm_pri_mi2s_tx_ch = 1;
@@ -99,8 +110,6 @@ static struct wcd9xxx_mbhc_config mbhc_cfg = {
 	.insert_detect = true,
 	.swap_gnd_mic = NULL,
 	.use_int_rbias = false,
-	.micbias_enable_flags = 1 << MBHC_MICBIAS_ENABLE_THRESHOLD_HEADSET |
-				1 << MBHC_MICBIAS_ENABLE_REGULAR_HEADSET,
 	.cs_enable_flags = (1 << MBHC_CS_ENABLE_POLLING |
 			    1 << MBHC_CS_ENABLE_INSERTION |
 			    1 << MBHC_CS_ENABLE_REMOVAL),
@@ -156,13 +165,28 @@ static int msm8x10_mclk_event(struct snd_soc_dapm_widget *w,
 static int msm_ext_spkramp_event(struct snd_soc_dapm_widget *w,
 			      struct snd_kcontrol *kcontrol, int event);
 static void msm8x10_enable_ext_spk_power_amp(u32 on);
+#if defined (CONFIG_EXT_MAINMIC_BIAS)
+static int msm_ext_mainmic_event(struct snd_soc_dapm_widget *w,
+			     struct snd_kcontrol *kcontrol, int event);
+#endif
+#if defined (CONFIG_EXT_SUBMIC_BIAS)
+static int msm_ext_submic_event(struct snd_soc_dapm_widget *w,
+			     struct snd_kcontrol *kcontrol, int event);
+#endif
 
 static const struct snd_soc_dapm_widget msm8x10_dapm_widgets[] = {
 
 	SND_SOC_DAPM_SUPPLY("MCLK",  SND_SOC_NOPM, 0, 0,
 	msm8x10_mclk_event, SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_SPK("Lineout amp", msm_ext_spkramp_event),
+#if defined (CONFIG_EXT_MAINMIC_BIAS)
+	SND_SOC_DAPM_MIC("Handset Mic", msm_ext_mainmic_event),
+#else
 	SND_SOC_DAPM_MIC("Handset Mic", NULL),
+#endif
+#if defined (CONFIG_EXT_SUBMIC_BIAS)
+	SND_SOC_DAPM_MIC("Sub Mic", msm_ext_submic_event),
+#endif
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("Secondary Mic", NULL),
 	SND_SOC_DAPM_MIC("Digital Mic1", NULL),
@@ -185,6 +209,69 @@ static int msm8x10_ext_spk_power_amp_init(void)
 	}
 	return 0;
 }
+
+#if defined (CONFIG_MACH_MS04TFN) || defined(CONFIG_SEC_HEAT_PROJECT)
+static int msm8x10_ext_micbias_init(void)
+{
+	int ret = 0;
+#if defined (CONFIG_EXT_MAINMIC_BIAS)
+	ext_main_micbias_gpio = of_get_named_gpio(spdev->dev.of_node,
+		"qcom,ext-main-micbias-gpio", 0);
+	if (ext_main_micbias_gpio >= 0) {
+		ret = gpio_request(ext_main_micbias_gpio, "ext_main_micbias_gpio");
+		if (ret) {
+			pr_err("%s: gpio_request failed for ext_main_micbias_gpio.\n",
+				__func__);
+			return -EINVAL;
+		}
+		gpio_direction_output(ext_main_micbias_gpio, 0);
+	}
+#endif
+#if defined (CONFIG_EXT_SUBMIC_BIAS)
+		ext_sub_micbias_gpio = of_get_named_gpio(spdev->dev.of_node,
+			"qcom,ext-sub-micbias-gpio", 0);
+		if (ext_sub_micbias_gpio >= 0) {
+			ret = gpio_request(ext_sub_micbias_gpio, "ext_sub_micbias_gpio");
+			if (ret) {
+				pr_err("%s: gpio_request failed for ext_sub_micbias_gpio.\n",
+					__func__);
+				return -EINVAL;
+			}
+			gpio_direction_output(ext_sub_micbias_gpio, 0);
+		}
+#endif
+	return 0;
+}
+#endif
+
+#if defined (CONFIG_EXT_MAINMIC_BIAS)
+static int msm_ext_mainmic_event(struct snd_soc_dapm_widget *w,
+			     struct snd_kcontrol *kcontrol, int event)
+{
+	pr_info("%s()\n", __func__);
+	if (ext_main_micbias_gpio >= 0) {
+		if (SND_SOC_DAPM_EVENT_ON(event))
+			gpio_direction_output(ext_main_micbias_gpio, 1);
+		else
+			gpio_direction_output(ext_main_micbias_gpio, 0);
+	}
+	return 0;
+}
+#endif
+#if defined (CONFIG_EXT_SUBMIC_BIAS)
+static int msm_ext_submic_event(struct snd_soc_dapm_widget *w,
+			     struct snd_kcontrol *kcontrol, int event)
+{
+	pr_info("%s()\n", __func__);
+	if (ext_sub_micbias_gpio >= 0) {
+		if (SND_SOC_DAPM_EVENT_ON(event))
+			gpio_direction_output(ext_sub_micbias_gpio, 1);
+		else
+			gpio_direction_output(ext_sub_micbias_gpio, 0);
+	}
+	return 0;
+}
+#endif
 
 static int msm_ext_spkramp_event(struct snd_soc_dapm_widget *w,
 			     struct snd_kcontrol *kcontrol, int event)
@@ -286,8 +373,6 @@ static int msm_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 					SNDRV_PCM_HW_PARAM_CHANNELS);
 
 	pr_debug("%s(), channel:%d\n", __func__, msm_pri_mi2s_tx_ch);
-	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
-					msm_sec_mi2s_rx_bit_format);
 	rate->min = rate->max = 48000;
 	channels->min = channels->max = msm_pri_mi2s_tx_ch;
 
@@ -529,6 +614,9 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 
 	pr_debug("%s(),dev_name%s\n", __func__, dev_name(cpu_dai->dev));
 	msm8x10_ext_spk_power_amp_init();
+#if defined (CONFIG_MACH_MS04TFN) || defined(CONFIG_SEC_HEAT_PROJECT)
+	msm8x10_ext_micbias_init();
+#endif
 
 	mbhc_cfg.calibration = def_msm8x10_wcd_mbhc_cal();
 	if (mbhc_cfg.calibration) {
@@ -547,6 +635,21 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 
 	snd_soc_dapm_enable_pin(dapm, "Lineout amp");
 	snd_soc_dapm_sync(dapm);
+
+#ifdef CONFIG_SAMSUNG_JACK
+//balaji.k: Need to remove this code in future
+
+// Below lines has been added only because in need to codec ptr in order to enable
+//MIC BIAS2 dapm widget of Codec
+
+	ret = snd_soc_jack_new(codec, "Headset Jack",
+							(SND_JACK_HEADSET | SND_JACK_OC_HPHL | SND_JACK_OC_HPHR),
+							&hs_jack);
+	if (ret) {
+		pr_err("failed to create new jack\n");
+		return ret;
+	}
+#endif
 
 	ret = snd_soc_add_codec_controls(codec, msm_snd_controls,
 					 ARRAY_SIZE(msm_snd_controls));
@@ -611,21 +714,21 @@ static void *def_msm8x10_wcd_mbhc_cal(void)
 	btn_high = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg,
 					       MBHC_BTN_DET_V_BTN_HIGH);
 	btn_low[0] = -50;
-	btn_high[0] = 20;
-	btn_low[1] = 21;
-	btn_high[1] = 61;
-	btn_low[2] = 62;
-	btn_high[2] = 104;
-	btn_low[3] = 105;
-	btn_high[3] = 148;
-	btn_low[4] = 149;
-	btn_high[4] = 189;
-	btn_low[5] = 190;
-	btn_high[5] = 228;
-	btn_low[6] = 229;
-	btn_high[6] = 269;
-	btn_low[7] = 270;
-	btn_high[7] = 500;
+	btn_high[0] = 10;
+	btn_low[1] = 11;
+	btn_high[1] = 52;
+	btn_low[2] = 53;
+	btn_high[2] = 94;
+	btn_low[3] = 95;
+	btn_high[3] = 133;
+	btn_low[4] = 134;
+	btn_high[4] = 171;
+	btn_low[5] = 172;
+	btn_high[5] = 208;
+	btn_low[6] = 209;
+	btn_high[6] = 244;
+	btn_low[7] = 245;
+	btn_high[7] = 330;
 	n_ready = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg, MBHC_BTN_DET_N_READY);
 	n_ready[0] = 80;
 	n_ready[1] = 68;
@@ -638,6 +741,47 @@ static void *def_msm8x10_wcd_mbhc_cal(void)
 
 	return msm8x10_wcd_cal;
 }
+
+#ifdef CONFIG_SAMSUNG_JACK
+static struct snd_soc_jack hs_jack;
+
+void msm8x10_enable_ear_micbias(bool state)
+{
+	int nRetVal = 0;
+	struct snd_soc_jack *jack = &hs_jack;
+	struct snd_soc_codec *codec;
+	struct snd_soc_dapm_context *dapm;
+	char *str
+#ifdef CONFIG_EXT_EARMIC_BIAS
+		= "Headset Mic";
+#else
+		= "MIC BIAS Internal2";
+#endif
+
+	printk("%s : str: %s\n", __func__, str);
+
+	if (jack->codec == NULL) { /* audrx_init not yet called */
+		pr_err("%s codec==NULL\n", __func__);
+		return;
+	}
+	codec = jack->codec;
+	dapm = &codec->dapm;
+
+	mutex_lock(&dapm->codec->mutex);
+
+	if (state == 1) {
+		nRetVal = snd_soc_dapm_force_enable_pin(dapm, str);
+		pr_info("%s enable the codec  pin : %d with state :%d\n", __func__, nRetVal, state);
+	} else{
+		nRetVal = snd_soc_dapm_disable_pin(dapm, str);
+		pr_info("%s disable the codec  pin : %d with state :%d\n", __func__, nRetVal, state);
+	}
+	snd_soc_dapm_sync(dapm);
+
+	mutex_unlock(&dapm->codec->mutex);
+}
+EXPORT_SYMBOL(msm8x10_enable_ear_micbias);
+#endif
 
 static int msm_proxy_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 					struct snd_pcm_hw_params *params)
@@ -893,21 +1037,6 @@ static struct snd_soc_dai_link msm8x10_dai[] = {
 		.codec_name = "snd-soc-dummy",
 		.be_id = MSM_FRONTEND_DAI_QCHAT,
 	},
-	{/* hw:x,15 */
-		.name = "MSM8X10 Media9",
-		.stream_name = "MultiMedia9",
-		.cpu_dai_name   = "MultiMedia9",
-		.platform_name  = "msm-pcm-dsp.0",
-		.dynamic = 1,
-		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
-			SND_SOC_DPCM_TRIGGER_POST},
-		.codec_dai_name = "snd-soc-dummy-dai",
-		.codec_name = "snd-soc-dummy",
-		.ignore_suspend = 1,
-		/* this dainlink has playback support */
-		.ignore_pmdown_time = 1,
-		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA9
-	},
 	/* Backend I2S DAI Links */
 	{
 		.name = LPASS_BE_SEC_MI2S_RX,
@@ -1050,19 +1179,6 @@ static struct snd_soc_dai_link msm8x10_dai[] = {
 		.codec_dai_name = "msm-stub-rx",
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_VOICE_PLAYBACK_TX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
-		.ignore_suspend = 1,
-	},
-	/* Incall Music 2 BACK END DAI Link */
-	{
-		.name = LPASS_BE_VOICE2_PLAYBACK_TX,
-		.stream_name = "Voice2 Farend Playback",
-		.cpu_dai_name = "msm-dai-q6-dev.32770",
-		.platform_name = "msm-pcm-routing",
-		.codec_name     = "msm-stub-codec.1",
-		.codec_dai_name = "msm-stub-rx",
-		.no_pcm = 1,
-		.be_id = MSM_BACKEND_DAI_VOICE2_PLAYBACK_TX,
 		.be_hw_params_fixup = msm_be_hw_params_fixup,
 		.ignore_suspend = 1,
 	},

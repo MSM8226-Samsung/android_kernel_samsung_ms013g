@@ -90,6 +90,20 @@
 			<1401600000 10>,
 			<1497600000 11>,
 			<1593600000 12>;
+		qcom,speed5-bin-v1 =
+			<         0 0>,
+			< 384000000 2>,
+			< 787200000 4>,
+			< 998400000 5>,
+			<1094400000 6>,
+			<1190400000 7>,
+			<1305600000 8>,
+			<1344000000 9>,
+			<1401600000 10>,
+			<1497600000 11>,
+			<1593600000 12>,
+			<1689600000 13>,
+			<1785600000 14>;
 	};
 
 	qcom,msm-thermal {
@@ -148,15 +162,29 @@
 	regulator-min-microvolt = <1>;
 	regulator-max-microvolt = <14>;
 	qcom,cpr-corner-map = <1 1 2 2 3 3 3 3 3 3 3 3 3 3>;
-	qcom,cpr-quot-adjust-table =
-				<1 5 450>,
-				<1 6 375>,
-				<1 7 300>,
-				<1 8 225>,
-				<1 9 187>,
-				<1 10 150>,
-				<1 11 75>;
 	qcom,cpr-quotient-adjustment = <0 72 72>;
+	qcom,pvs-version-fuse-sel = <22 4 2 0>;
+	qcom,cpr-corner-frequency-map =
+			<1 300000000>,
+			<2 384000000>,
+			<3 600000000>,
+			<4 787200000>,
+			<5 998400000>,
+			<6 1094400000>,
+			<7 1190400000>,
+			<8 1305600000>,
+			<9 1344000000>,
+			<10 1401600000>,
+			<11 1497600000>,
+			<12 1593600000>,
+			<13 1689600000>,
+			<14 1785600000>;
+	qcom,cpr-speed-bin-max-corners =
+			<0 1 2 4 7>,
+			<1 1 2 4 12>,
+			<2 1 2 4 10>,
+			<5 1 2 4 14>;
+	qcom,cpr-quot-adjust-scaling-factor-max = <650>;
 };
 
 &tsens {
@@ -169,14 +197,37 @@
 };
 
 &memory_hole {
-	qcom,memblock-remove = <0x08000000 0x7500000
-				0x0fa00000 0x500000>; /* Address and size of the hole */
+	qcom,memblock-remove = <0x08000000 0x5900000
+				0x0dc00000 0x1d00000
+				0x0fa00000 0x500000
+				0x10000000 0xc00000>; /* Address and size of the hole */
 };
 
+&sec_8926_qseecom {
+		reg = <0x10000000 0x600000>;
+};
+
+&soc {
+	qcom,ion {
+		qcom,ion-heap@23 { /* OTHER PIL HEAP */
+			qcom,memory-fixed = <0x0dc00000  0x1D00000>; /*Overwriting the PIL Heap loading area*/
+		};	
+	};
+};
+
+/*
 &hsic_host {
 	interrupt-map = <0 &intc 0 136 0
 		1 &intc 0 148 0
 		2 &msmgpio 119 0x8>;
 	hsic,strobe-gpio = <&msmgpio 119 0x00>;
 	hsic,data-gpio = <&msmgpio 120 0x00>;
+};
+*/
+&msm_gpu{
+	qcom,msm-bus,vectors-KBps =
+		<26 512 0 0>, <89 604 0 0>,
+		<26 512 800000 1600000>, <89 604 0 3200000>,
+		<26 512 1600000 3200000>, <89 604 0 5120000>,
+		<26 512 2128000 4256000>, <89 604 0 6400000>;
 };

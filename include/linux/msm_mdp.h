@@ -1,7 +1,7 @@
 /* include/linux/msm_mdp.h
  *
  * Copyright (C) 2007 Google Incorporated
- * Copyright (c) 2012-2014 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2013 The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -431,13 +431,13 @@ struct mdp_pa_v2_data {
 	uint32_t global_sat_adj;
 	uint32_t global_val_adj;
 	uint32_t global_cont_adj;
+	uint32_t six_zone_len;
+	uint32_t *six_zone_curve_p0;
+	uint32_t *six_zone_curve_p1;
+	uint32_t six_zone_thresh;
 	struct mdp_pa_mem_col_cfg skin_cfg;
 	struct mdp_pa_mem_col_cfg sky_cfg;
 	struct mdp_pa_mem_col_cfg fol_cfg;
-	uint32_t six_zone_len;
-	uint32_t six_zone_thresh;
-	uint32_t *six_zone_curve_p0;
-	uint32_t *six_zone_curve_p1;
 };
 
 struct mdp_igc_lut_data {
@@ -984,7 +984,6 @@ struct msmfb_metadata {
 
 #define MDP_MAX_FENCE_FD	32
 #define MDP_BUF_SYNC_FLAG_WAIT	1
-#define MDP_BUF_SYNC_FLAG_RETIRE_FENCE	0x10
 
 struct mdp_buf_sync {
 	uint32_t flags;
@@ -992,7 +991,6 @@ struct mdp_buf_sync {
 	uint32_t session_id;
 	int *acq_fen_fd;
 	int *rel_fen_fd;
-	int *retire_fen_fd;
 };
 
 struct mdp_async_blit_req_list {
@@ -1002,11 +1000,19 @@ struct mdp_async_blit_req_list {
 };
 
 #define MDP_DISPLAY_COMMIT_OVERLAY	1
+struct mdp_buf_fence {
+	uint32_t flags;
+	uint32_t acq_fen_fd_cnt;
+	int acq_fen_fd[MDP_MAX_FENCE_FD];
+	int rel_fen_fd[MDP_MAX_FENCE_FD];
+};
+
 
 struct mdp_display_commit {
 	uint32_t flags;
 	uint32_t wait_for_finish;
 	struct fb_var_screeninfo var;
+	struct mdp_buf_fence buf_fence;
 	struct mdp_rect roi;
 };
 
@@ -1063,7 +1069,6 @@ int msm_fb_writeback_dequeue_buffer(struct fb_info *info,
 int msm_fb_writeback_stop(struct fb_info *info);
 int msm_fb_writeback_terminate(struct fb_info *info);
 int msm_fb_writeback_set_secure(struct fb_info *info, int enable);
-int msm_fb_writeback_iommu_ref(struct fb_info *info, int enable);
 #endif
 
 #endif /*_MSM_MDP_H_*/
