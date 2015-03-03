@@ -596,6 +596,7 @@ int mdss_mdp_cmd_reconfigure_splash_done(struct mdss_mdp_ctl *ctl, bool handoff)
 #if !defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_CMD_WQXGA_S6TNMR7_PT_PANEL)
 	mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_CLK_CTRL, (void *)0);
 #endif
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 
 	if (!sec_debug_is_enabled()) {
 		struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(ctl->mfd);
