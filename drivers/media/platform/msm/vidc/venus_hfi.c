@@ -963,6 +963,7 @@ static inline int venus_hfi_power_off(struct venus_hfi_device *device)
 
 	device->power_enabled = 0;
 	--device->pwr_cnt;
+	dprintk(VIDC_INFO, "entering power collapse\n");
 already_disabled:
 	return rc;
 }
@@ -1024,18 +1025,45 @@ static inline int venus_hfi_power_on(struct venus_hfi_device *device)
 																	
 	/* Reboot the firmware */										
 
+
+	/*
+	 * Re-program all of the registers that get reset as a result of
+	 * regulator_disable() and _enable()
+	 */
+	venus_hfi_set_registers(device);
+
+	venus_hfi_write_register(device, VIDC_UC_REGION_ADDR,
+			(u32)device->iface_q_table.align_device_addr, 0);
+	venus_hfi_write_register(device,
+			VIDC_UC_REGION_SIZE, SHARED_QSIZE, 0);
+	venus_hfi_write_register(device, VIDC_CPU_CS_SCIACMDARG2,
+		(u32)device->iface_q_table.align_device_addr,
+		device->iface_q_table.align_virtual_addr);
+
+	if (!IS_ERR_OR_NULL(device->sfr.align_device_addr))
+		venus_hfi_write_register(device, VIDC_SFR_ADDR,
+				(u32)device->sfr.align_device_addr, 0);
+	if (!IS_ERR_OR_NULL(device->qdss.align_device_addr))
+		venus_hfi_write_register(device, VIDC_MMAP_ADDR,
+				(u32)device->qdss.align_device_addr, 0);
+
+	/* Reboot the firmware */
 	rc = venus_hfi_tzbsp_set_video_state(TZBSP_VIDEO_STATE_RESUME);
 	if (rc) {
 		dprintk(VIDC_ERR, "Failed to resume video core %d\n", rc);
 		goto err_set_video_state;
 	}
+
+	/* Wait for boot completion */
 	rc = venus_hfi_reset_core(device);
 	if (rc) {
 		dprintk(VIDC_ERR, "Failed to reset venus core");
 		goto err_reset_core;
 	}
+
 	device->power_enabled = 1;
 	++device->pwr_cnt;
+	dprintk(VIDC_INFO, "resuming from power collapse\n");
 	return rc;
 err_reset_core:
 	venus_hfi_tzbsp_set_video_state(TZBSP_VIDEO_STATE_SUSPEND);
@@ -2031,6 +2059,10 @@ static void *venus_hfi_session_init(void *device, u32 session_id,
 
 	new_session = (struct hal_session *)
 		kzalloc(sizeof(struct hal_session), GFP_KERNEL);
+	if (!new_session) {
+		dprintk(VIDC_ERR, "new session fail: Out of memory\n");
+		return NULL;
+	}
 	new_session->session_id = (u32) session_id;
 	if (session_type == 1)
 		new_session->is_decoder = 0;
@@ -3301,7 +3333,6 @@ static int venus_hfi_load_fw(void *dev)
 			__func__, device);
 		return -EINVAL;
 	}
-	
 	device->clk_gating_level = VCODEC_CLK;
 	rc = venus_hfi_iommu_attach(device);
 	if (rc) {
@@ -3479,15 +3510,16 @@ int venus_hfi_get_core_capabilities(void)
 	smem_table_ptr = smem_get_entry(SMEM_IMAGE_VERSION_TABLE,
 			&smem_block_size);
 	if (smem_table_ptr &&
-			((smem_image_index_venus + version_string_size) <= smem_block_size)) {
+			((smem_image_index_venus + version_string_size) <=
+			smem_block_size)) {
 		memcpy(version_info, smem_table_ptr + smem_image_index_venus,
 				version_string_size);
-		} else { 
-		dprintk(VIDC_ERR, 
-		"%s: failed to read version info from smem table\n", 
-		__func__); 
-		return -EINVAL; 
-		} 
+	} else {
+		dprintk(VIDC_ERR,
+			"%s: failed to read version info from smem table\n",
+			__func__);
+		return -EINVAL;
+	}
 
 	while (version_info[i++] != 'V' && i < version_string_size)
 		;
@@ -3573,6 +3605,11 @@ static void *venus_hfi_add_device(u32 device_id,
 		dprintk(VIDC_ERR, ": create pm workq failed\n");
 		goto error_createq_pm;
 	}
+
+	mutex_init(&hdevice->read_lock);
+	mutex_init(&hdevice->write_lock);
+	mutex_init(&hdevice->session_lock);
+	mutex_init(&hdevice->clk_pwr_lock);
 
 	if (hal_ctxt.dev_count == 0)
 		INIT_LIST_HEAD(&hal_ctxt.dev_head);
