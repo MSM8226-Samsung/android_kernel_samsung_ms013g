@@ -312,7 +312,6 @@ struct mdss_ad_info {
 	uint32_t bl_bright_shift;
 	uint32_t bl_lin[AD_BL_LIN_LEN];
 	uint32_t bl_lin_inv[AD_BL_LIN_LEN];
-	uint32_t bl_att_lut[AD_BL_ATT_LUT_LEN];
 };
 
 struct pp_sts_type {
@@ -426,11 +425,6 @@ struct mdss_overlay_private {
 	u32 splash_mem_addr;
 	u32 splash_mem_size;
 	u32 sd_enabled;
-
-	struct sw_sync_timeline *vsync_timeline;
-	struct mdss_mdp_vsync_handler vsync_retire_handler;
-	struct work_struct retire_work;
-	int retire_cnt;
 };
 
 struct mdss_mdp_perf_params {
