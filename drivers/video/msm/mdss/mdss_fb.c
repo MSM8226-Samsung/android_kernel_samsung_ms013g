@@ -910,10 +910,12 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 #if defined(CONFIG_CLK_TUNING)
 			load_clk_tuning_file();
 #endif
+			int panel_dead = mfd->panel_info->panel_dead;
 			ret = mfd->mdp.on_fnc(mfd);
 			if (ret == 0) {
 				mfd->panel_power_on = true;
-				mfd->panel_info->panel_dead = false;
+				if (panel_dead)
+					mfd->panel_info->panel_dead = false;
 			}
 			mutex_lock(&mfd->update.lock);
 			mfd->update.type = NOTIFY_TYPE_UPDATE;
@@ -973,6 +975,8 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+	int panel_dead = mfd->panel_info->panel_dead;
+	int ret;
 #if (defined(CONFIG_MACH_S3VE3G_EUR) || defined(CONFIG_MACH_VICTOR3GDSDTV_LTN)) && defined(CONFIG_ESD_ERR_FG_RECOVERY)
 	static int nblank_mode = FB_BLANK_UNBLANK;
 	static int final_state = -1;
@@ -1025,13 +1029,23 @@ NEXT_STEP2:
 		mutex_unlock(&esd_lock);
 #endif
 		return 0;
+
 	}
 #if (defined(CONFIG_MACH_S3VE3G_EUR) || defined(CONFIG_MACH_VICTOR3GDSDTV_LTN)) && defined(CONFIG_ESD_ERR_FG_RECOVERY)
 	ret = mdss_fb_blank_sub(blank_mode, info, mfd->op_enable);
 	mutex_unlock(&esd_lock);
 	return ret;
 #else
-	return mdss_fb_blank_sub(blank_mode, info, mfd->op_enable);
+	ret = mdss_fb_blank_sub(blank_mode, info, mfd->op_enable);
+	
+	if (blank_mode == FB_BLANK_UNBLANK && !panel_dead &&
+		mfd->panel_info->panel_dead) {
+		pr_err("%s: Panel is dead, attempt recovery\n", __func__);
+		mdss_fb_blank_sub(FB_BLANK_NORMAL, info, 1);
+		mdss_fb_blank_sub(FB_BLANK_UNBLANK, info, 1);
+	
+	}
+	return ret;
 #endif
 }
 

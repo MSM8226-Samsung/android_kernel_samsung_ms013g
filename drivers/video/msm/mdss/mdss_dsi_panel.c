@@ -446,6 +446,25 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
 
+	/* Send display on notification.  This will need to be revisited once
+	   we implement command mode support the way we want, since display
+	   may not be made visible to user until a point later than this */
+	if (!mfd->quickdraw_in_progress)
+		mmi_panel_notify(MMI_PANEL_EVENT_DISPLAY_ON, NULL);
+
+	mdss_dsi_get_pwr_mode(pdata, &pwr_mode);
+	/* validate screen is actually on */
+	if ((pwr_mode & 0x04) != 0x04) {
+ 		pr_err("%s: Display failure: DISON (0x04) bit not set\n",
+ 			__func__);
+ 		dropbox_issue = PWR_MODE_BLACK_DROPBOX_MSG;
+
+		if (pdata->panel_info.panel_dead)
+			pr_err("%s: Panel recovery FAILED!!\n", __func__);
+
+		pdata->panel_info.panel_dead = true;
+ 	}
+
 #if defined(CONFIG_MDSS_DSI_EVENT_HANDLER_PANEL)
 #if defined(CONFIG_FB_MSM_MDSS_MDP3)
 	msd.mfd->resume_state = MIPI_SUSPEND_STATE;
