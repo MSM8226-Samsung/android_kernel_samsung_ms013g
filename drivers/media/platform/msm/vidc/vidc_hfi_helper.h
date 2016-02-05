@@ -70,6 +70,7 @@
 #define HFI_ERR_SESSION_UNSUPPORT_BUFFERTYPE	(HFI_COMMON_BASE + 0x1010)
 #define HFI_ERR_SESSION_BUFFERCOUNT_TOOSMALL	(HFI_COMMON_BASE + 0x1011)
 #define HFI_ERR_SESSION_INVALID_SCALE_FACTOR	(HFI_COMMON_BASE + 0x1012)
+#define HFI_ERR_SESSION_UPSCALE_NOT_SUPPORTED	(HFI_COMMON_BASE + 0x1013)
 
 #define HFI_EVENT_SYS_ERROR				(HFI_COMMON_BASE + 0x1)
 #define HFI_EVENT_SESSION_ERROR			(HFI_COMMON_BASE + 0x2)
@@ -319,8 +320,6 @@ struct hfi_buffer_info {
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x01F)
 #define  HFI_PROPERTY_PARAM_VENC_MAX_NUM_B_FRAMES \
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x020)
-#define HFI_PROPERTY_PARAM_VENC_INITIAL_QP	\
-	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x028)
 #define HFI_PROPERTY_CONFIG_VENC_COMMON_START				\
 	(HFI_DOMAIN_BASE_VENC + HFI_ARCH_COMMON_OFFSET + 0x6000)
 #define HFI_PROPERTY_CONFIG_VENC_TARGET_BITRATE				\
@@ -527,13 +526,6 @@ struct hfi_quantization {
 	u32 layer_id;
 };
 
-struct hfi_initial_quantization {
-	u32 qp_i;
-	u32 qp_p;
-	u32 qp_b;
-	u32 init_qp_enable;
-};
-
 struct hfi_quantization_range {
 	u32 min_qp;
 	u32 max_qp;
@@ -609,6 +601,12 @@ struct hfi_codec_supported {
 struct hfi_properties_supported {
 	u32 num_properties;
 	u32 rg_properties[1];
+};
+
+struct hfi_vpe_color_space_conversion {
+	u32 csc_matrix[9];
+	u32 csc_bias[3];
+	u32 csc_limit[6];
 };
 
 #define HFI_ROTATE_NONE					(HFI_COMMON_BASE + 0x1)

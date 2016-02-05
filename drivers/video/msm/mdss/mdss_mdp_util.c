@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -126,10 +126,15 @@ static inline void mdss_mdp_intr_done(int index)
 irqreturn_t mdss_mdp_isr(int irq, void *ptr)
 {
 	struct mdss_data_type *mdata = ptr;
-	u32 isr, mask, hist_isr, hist_mask;
+	u32 isr, hist_isr, hist_mask;
+	u32 mask = 0;
 
 
 	isr = MDSS_MDP_REG_READ(MDSS_MDP_REG_INTR_STATUS);
+
+#if defined (CONFIG_FB_MSM_MDSS_DSI_DBG)
+	xlog(__func__, 0, isr, mask, 0, 0, 0);
+#endif
 
 	if (isr == 0)
 		goto mdp_isr_done;
@@ -257,6 +262,27 @@ void mdss_mdp_intersect_rect(struct mdss_mdp_img_rect *res_rect,
 	else
 		*res_rect = (struct mdss_mdp_img_rect){l, t, (r-l), (b-t)};
 }
+
+void mdss_mdp_crop_rect(struct mdss_mdp_img_rect *src_rect,
+	struct mdss_mdp_img_rect *dst_rect,
+	const struct mdss_mdp_img_rect *sci_rect)
+{
+	struct mdss_mdp_img_rect res;
+	mdss_mdp_intersect_rect(&res, dst_rect, sci_rect);
+
+	if (res.w && res.h) {
+		if ((res.w != dst_rect->w) || (res.h != dst_rect->h)) {
+			src_rect->x = src_rect->x + (res.x - dst_rect->x);
+			src_rect->y = src_rect->y + (res.y - dst_rect->y);
+			src_rect->w = res.w;
+			src_rect->h = res.h;
+		}
+		*dst_rect = (struct mdss_mdp_img_rect)
+			{(res.x - sci_rect->x), (res.y - sci_rect->y),
+			res.w, res.h};
+	}
+}
+
 int mdss_mdp_get_rau_strides(u32 w, u32 h,
 			       struct mdss_mdp_format_params *fmt,
 			       struct mdss_mdp_plane_sizes *ps)
@@ -592,9 +618,9 @@ int mdss_mdp_get_img(struct msmfb_data *img, struct mdss_mdp_img_data *data)
 
 int mdss_mdp_calc_phase_step(u32 src, u32 dst, u32 *out_phase)
 {
-	u32 unit, residue;
+	u32 unit, residue, result;
 
-	if (dst == 0)
+	if (src == 0 || dst == 0)
 		return -EINVAL;
 
 	unit = 1 << PHASE_STEP_SHIFT;
@@ -602,8 +628,13 @@ int mdss_mdp_calc_phase_step(u32 src, u32 dst, u32 *out_phase)
 
 	/* check if overflow is possible */
 	if (src > dst) {
-		residue = *out_phase & (unit - 1);
-		if (residue && ((residue * dst) < (unit - residue)))
+		residue = *out_phase - unit;
+		result = (residue * dst) + residue;
+
+		while (result > (unit + (unit >> 1)))
+			result -= unit;
+
+		if ((result > residue) && (result < unit))
 			return -EOVERFLOW;
 	}
 

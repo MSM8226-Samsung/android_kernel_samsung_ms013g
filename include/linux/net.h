@@ -19,6 +19,7 @@
 #define _LINUX_NET_H
 
 #include <linux/socket.h>
+#include <linux/sched.h>
 #include <asm/socket.h>
 
 #define NPROTO		AF_MAX
@@ -148,6 +149,8 @@ struct socket {
 
 	struct file		*file;
 	struct sock		*sk;
+	uid_t			knox_uid;
+	pid_t			knox_pid;
 	const struct proto_ops	*ops;
 };
 

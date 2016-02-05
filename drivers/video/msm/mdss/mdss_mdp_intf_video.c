@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,6 +22,12 @@
 #include "mdss_fb.h"
 #include "mdss_mdp.h"
 #include "mdss_panel.h"
+#include "mdss_mdp_trace.h"
+#include "mdss_dsi.h"
+#include "mdss_edp.h"
+
+int count_wait_for_timeout = 0;
+int get_lcd_attached(void);
 
 /* wait for at least 2 vsyncs for lowest refresh rate (24hz) */
 #define VSYNC_TIMEOUT_US 100000
@@ -327,6 +333,8 @@ static int mdss_mdp_video_stop(struct mdss_mdp_ctl *ctl)
 				frame_rate = 24;
 			msleep((1000/frame_rate) + 1);
 		}
+
+		mdss_iommu_ctrl(0);
 		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 		ctx->timegen_en = false;
 
@@ -433,8 +441,10 @@ static int mdss_mdp_video_wait4comp(struct mdss_mdp_ctl *ctl, void *arg)
 	if (ctx->polling_en) {
 		rc = mdss_mdp_video_pollwait(ctl);
 	} else {
+		mutex_unlock(&ctl->lock);
 		rc = wait_for_completion_timeout(&ctx->vsync_comp,
 				usecs_to_jiffies(VSYNC_TIMEOUT_US));
+		mutex_lock(&ctl->lock);
 		if (rc == 0) {
 			pr_warn("vsync wait timeout %d, fallback to poll mode\n",
 					ctl->num);
@@ -462,11 +472,137 @@ static void mdss_mdp_video_underrun_intr_done(void *arg)
 		return;
 
 	ctl->underrun_cnt++;
-	pr_debug("display underrun detected for ctl=%d count=%d\n", ctl->num,
+//	trace_mdp_video_underrun_done(ctl->num, ctl->underrun_cnt);
+	pr_info("display underrun detected for ctl=%d count=%d\n", ctl->num,
 			ctl->underrun_cnt);
+	mdss_mdp_underrun_dump_info(ctl->mfd);
 }
 
-static int mdss_mdp_video_config_fps(struct mdss_mdp_ctl *ctl, int new_fps)
+static int mdss_mdp_video_vfp_fps_update(struct mdss_mdp_ctl *ctl, int new_fps)
+{
+	int curr_fps;
+	u32 add_v_lines = 0;
+	u32 current_vsync_period_f0, new_vsync_period_f0;
+	struct mdss_panel_data *pdata;
+	struct mdss_mdp_video_ctx *ctx;
+	u32 vsync_period, hsync_period;
+
+	ctx = (struct mdss_mdp_video_ctx *) ctl->priv_data;
+	if (!ctx) {
+		pr_err("invalid ctx\n");
+		return -ENODEV;
+	}
+
+	pdata = ctl->panel_data;
+	if (pdata == NULL) {
+		pr_err("%s: Invalid panel data\n", __func__);
+		return -EINVAL;
+	}
+
+	vsync_period = mdss_panel_get_vtotal(&pdata->panel_info);
+	hsync_period = mdss_panel_get_htotal(&pdata->panel_info);
+	curr_fps = mdss_panel_get_framerate(&pdata->panel_info);
+
+	if (curr_fps > new_fps) {
+		add_v_lines = mult_frac(vsync_period,
+				(curr_fps - new_fps), new_fps);
+		pdata->panel_info.lcdc.v_front_porch += add_v_lines;
+	} else {
+		add_v_lines = mult_frac(vsync_period,
+				(new_fps - curr_fps), new_fps);
+		pdata->panel_info.lcdc.v_front_porch -= add_v_lines;
+	}
+
+	vsync_period = mdss_panel_get_vtotal(&pdata->panel_info);
+	current_vsync_period_f0 = mdp_video_read(ctx,
+		MDSS_MDP_REG_INTF_VSYNC_PERIOD_F0);
+	new_vsync_period_f0 = (vsync_period * hsync_period);
+
+	mdp_video_write(ctx, MDSS_MDP_REG_INTF_VSYNC_PERIOD_F0,
+			current_vsync_period_f0 | 0x800000);
+	if (new_vsync_period_f0 & 0x800000) {
+		mdp_video_write(ctx, MDSS_MDP_REG_INTF_VSYNC_PERIOD_F0,
+			new_vsync_period_f0);
+	} else {
+		mdp_video_write(ctx, MDSS_MDP_REG_INTF_VSYNC_PERIOD_F0,
+			new_vsync_period_f0 | 0x800000);
+		mdp_video_write(ctx, MDSS_MDP_REG_INTF_VSYNC_PERIOD_F0,
+			new_vsync_period_f0 & 0x7fffff);
+	}
+
+	return 0;
+}
+
+#if defined(CONFIG_FB_MSM_MIPI_MAGNA_OCTA_VIDEO_WXGA_PT_DUAL_PANEL)
+
+extern int force_switching;
+
+static int mdss_mdp_video_panel_switch_reset(struct mdss_mdp_ctl *ctl)
+{
+	struct mdss_mdp_video_ctx *ctx;
+	int rc;
+	u32 dsi_ctrl;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+
+	ctrl_pdata = container_of(ctl->panel_data, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	ctx = (struct mdss_mdp_video_ctx *) ctl->priv_data;
+	if (!ctx) {
+		pr_err("invalid ctx\n");
+		return -ENODEV;
+	}
+
+	pr_info("%s : ++ \n",__func__);
+
+	if (!force_switching) {
+		mdss_mdp_display_commit(ctl, NULL);
+		mdss_mdp_display_wait4comp(ctl);
+	}
+	mdp_video_write(ctx,
+			MDSS_MDP_REG_INTF_TIMING_ENGINE_EN, 0);
+	/*
+	 * Need to wait for atleast one vsync time for proper
+	 * TG OFF before doing changes on interfaces
+	 */
+
+	msleep(20);
+	rc = mdss_mdp_ctl_intf_event(ctl,
+				MDSS_EVENT_PANEL_SWITCH_RESET,
+				(void *)0);
+
+	dsi_ctrl = MIPI_INP((ctrl_pdata->ctrl_base) + 0x0004);
+	dsi_ctrl &= ~0x2;
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0004, dsi_ctrl);
+
+	mdss_dsi_controller_cfg(true, ctl->panel_data);
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
+
+	dsi_ctrl |= 0x2;
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0004, dsi_ctrl);
+
+	mdp_video_write(ctx,
+			MDSS_MDP_REG_INTF_TIMING_ENGINE_EN, 1);
+	/*
+	 * Add memory barrier to make sure the MDP Video
+	 * mode engine is enabled before next frame is sent
+	 */
+	mb();
+	if (!force_switching) {
+		ctl->force_screen_state = MDSS_SCREEN_DEFAULT;
+		mdss_mdp_display_commit(ctl, NULL);
+		mdss_mdp_display_wait4comp(ctl);
+	}
+
+	pr_info("%s : -- \n",__func__);
+
+	return rc;
+}
+#endif
+
+static int mdss_mdp_video_config_fps(struct mdss_mdp_ctl *ctl,
+					struct mdss_mdp_ctl *sctl, int new_fps)
 {
 	struct mdss_mdp_video_ctx *ctx;
 	struct mdss_panel_data *pdata;
@@ -529,6 +665,50 @@ static int mdss_mdp_video_config_fps(struct mdss_mdp_ctl *ctl, int new_fps)
 			ctl->force_screen_state = MDSS_SCREEN_DEFAULT;
 			mdss_mdp_display_commit(ctl, NULL);
 			mdss_mdp_display_wait4comp(ctl);
+		} else if (pdata->panel_info.dfps_update
+				== DFPS_IMMEDIATE_PORCH_UPDATE_MODE){
+			if (!ctx->timegen_en) {
+				pr_err("TG is OFF. DFPS mode invalid\n");
+				return -EINVAL;
+			}
+
+			video_vsync_irq_enable(ctl, true);
+			INIT_COMPLETION(ctx->vsync_comp);
+			rc = wait_for_completion_timeout(&ctx->vsync_comp,
+				usecs_to_jiffies(VSYNC_TIMEOUT_US));
+			WARN(rc <= 0, "timeout (%d) vsync interrupt on ctl=%d\n",
+				rc, ctl->num);
+
+			video_vsync_irq_disable(ctl);
+			/* Do not configure fps on vsync timeout */
+			if (rc <= 0)
+				return rc;
+
+			if (mdss_mdp_video_line_count(ctl) >=
+					pdata->panel_info.yres/2) {
+				pr_err("Too few lines left line_cnt = %d y_res/2 = %d\n",
+					mdss_mdp_video_line_count(ctl),
+					pdata->panel_info.yres/2);
+				return -EPERM;
+			}
+			rc = mdss_mdp_video_vfp_fps_update(ctl, new_fps);
+			if (rc < 0) {
+				pr_err("%s: Error during DFPS\n", __func__);
+				return rc;
+			}
+			if (sctl) {
+				rc = mdss_mdp_video_vfp_fps_update(sctl,
+								new_fps);
+				if (rc < 0) {
+					pr_err("%s: DFPS error\n", __func__);
+					return rc;
+				}
+			}
+			rc = mdss_mdp_ctl_intf_event(ctl,
+						MDSS_EVENT_PANEL_UPDATE_FPS,
+						(void *)new_fps);
+			WARN(rc, "intf %d panel fps update error (%d)\n",
+							ctl->intf_num, rc);
 		} else {
 			pr_err("intf %d panel, unknown FPS mode\n",
 							ctl->intf_num);
@@ -551,6 +731,7 @@ static int mdss_mdp_video_config_fps(struct mdss_mdp_ctl *ctl, int new_fps)
 static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 {
 	struct mdss_mdp_video_ctx *ctx;
+	struct mdss_panel_data *pdata = ctl->panel_data;
 	int rc;
 
 	pr_debug("kickoff ctl=%d\n", ctl->num);
@@ -560,7 +741,13 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		pr_err("invalid ctx\n");
 		return -ENODEV;
 	}
-
+#if !defined(CONFIG_FB_MSM8x26_MDSS_CHECK_LCD_CONNECTION) && \
+	!defined(CONFIG_FB_MSM_MIPI_MAGNA_OCTA_VIDEO_WXGA_PT_DUAL_PANEL)
+	if (get_lcd_attached() == 0) {
+		pr_err("%s : lcd is not attached..\n",__func__);
+		return -ENODEV;
+	}
+#endif
 	if (!ctx->wait_pending) {
 		ctx->wait_pending++;
 		video_vsync_irq_enable(ctl, true);
@@ -570,6 +757,24 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 	}
 
 	if (!ctx->timegen_en) {
+#if defined(CONFIG_FB_MSM_MDSS_MAGNA_OCTA_VIDEO_720P_PANEL)
+		if(ctl->panel_data->panel_info.cont_splash_enabled) {
+			pr_debug("%s:MDSS_EVENT_BLANK \n", __func__);
+			rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_BLANK, NULL);
+			if (rc == -EBUSY) {
+				pr_debug("intf #%d busy don't turn off\n",
+					 ctl->intf_num);
+				return rc;
+			}
+			WARN(rc, "intf %d blank error (%d)\n", ctl->intf_num, rc);
+
+			mdp_video_write(ctx, MDSS_MDP_REG_INTF_TIMING_ENGINE_EN, 0);
+			ctx->timegen_en = false;
+			pr_debug("%s:MDSS_EVENT_PANEL_OFF \n", __func__);
+			rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_OFF, NULL);
+			WARN(rc, "intf %d timegen off error (%d)\n", ctl->intf_num, rc);
+		}
+#endif
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_UNBLANK, NULL);
 		if (rc) {
 			pr_warn("intf #%d unblank error (%d)\n",
@@ -580,6 +785,17 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		}
 
 		pr_debug("enabling timing gen for intf=%d\n", ctl->intf_num);
+
+		if (pdata->panel_info.cont_splash_enabled){
+			rc = wait_for_completion_timeout(&ctx->vsync_comp,
+					usecs_to_jiffies(VSYNC_TIMEOUT_US));
+		}
+
+		rc = mdss_iommu_ctrl(1);
+		if (IS_ERR_VALUE(rc)) {
+			pr_err("IOMMU attach failed\n");
+			return rc;
+		}
 
 		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
 
@@ -595,7 +811,63 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		ctx->timegen_en = true;
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_ON, NULL);
 		WARN(rc, "intf %d panel on error (%d)\n", ctl->intf_num, rc);
+#if defined(CONFIG_FB_MSM_EDP_SAMSUNG)
+		set_backlight_first_kick_off();
+#endif
 	}
+
+	return 0;
+}
+
+int mdss_mdp_video_copy_splash_screen(struct mdss_panel_data *pdata)
+{
+	void *virt = NULL;
+	unsigned long bl_fb_addr = 0;
+	unsigned long *bl_fb_addr_va;
+	unsigned long  pipe_addr, pipe_src_size;
+	u32 height, width, rgb_size, bpp;
+	size_t size;
+	static struct ion_handle *ihdl;
+	struct ion_client *iclient = mdss_get_ionclient();
+	static ion_phys_addr_t phys;
+
+	pipe_addr = MDSS_MDP_REG_SSPP_OFFSET(3) +
+		MDSS_MDP_REG_SSPP_SRC0_ADDR;
+	pipe_src_size =
+		MDSS_MDP_REG_SSPP_OFFSET(3) + MDSS_MDP_REG_SSPP_SRC_SIZE;
+
+	bpp        = 3;
+	rgb_size   = MDSS_MDP_REG_READ(pipe_src_size);
+	bl_fb_addr = MDSS_MDP_REG_READ(pipe_addr);
+
+	height = (rgb_size >> 16) & 0xffff;
+	width  = rgb_size & 0xffff;
+	size = PAGE_ALIGN(height * width * bpp);
+	pr_debug("%s:%d splash_height=%d splash_width=%d Buffer size=%d\n",
+			__func__, __LINE__, height, width, size);
+
+	ihdl = ion_alloc(iclient, size, SZ_1M,
+			ION_HEAP(ION_QSECOM_HEAP_ID), 0);
+	if (IS_ERR_OR_NULL(ihdl)) {
+		pr_err("unable to alloc fbmem from ion (%p)\n", ihdl);
+		return -ENOMEM;
+	}
+
+	pdata->panel_info.splash_ihdl = ihdl;
+
+	virt = ion_map_kernel(iclient, ihdl);
+	ion_phys(iclient, ihdl, &phys, &size);
+
+	pr_debug("%s %d Allocating %u bytes at 0x%lx (%pa phys)\n",
+			__func__, __LINE__, size,
+			(unsigned long int)virt, &phys);
+
+	bl_fb_addr_va = (unsigned long *)ioremap(bl_fb_addr, size);
+	memcpy(virt, bl_fb_addr_va, size);
+	iounmap(bl_fb_addr_va);
+	MDSS_MDP_REG_WRITE(pipe_addr, phys);
+	MDSS_MDP_REG_WRITE(MDSS_MDP_REG_CTL_FLUSH + MDSS_MDP_REG_CTL_OFFSET(0),
+			0x48);
 
 	return 0;
 }
@@ -609,6 +881,9 @@ int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 	struct mdss_mdp_video_ctx *ctx;
 	struct mdss_data_type *mdata = ctl->mdata;
 
+#if !defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_FULL_HD_PT_PANEL) && !defined(CONFIG_FB_MSM_MDSS_S6E8AA0A_HD_PANEL)
+	ret = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_FIRST_FRAME_UPDATE, NULL);
+#endif
 	i = ctl->intf_num - MDSS_MDP_INTF0;
 	if (i < mdata->nintf) {
 		ctx = ((struct mdss_mdp_video_ctx *) mdata->video_intf) + i;
@@ -618,6 +893,10 @@ int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 		ret = -EINVAL;
 		goto error;
 	}
+
+#if defined(CONFIG_FB_MSM_MDSS_S6E8AA0A_HD_PANEL)
+	ret = mdss_mdp_ctl_intf_event(ctl, MTP_READ,NULL);
+#endif
 
 	if (!handoff) {
 		ret = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_CONT_SPLASH_BEGIN,
@@ -637,14 +916,20 @@ int mdss_mdp_video_reconfigure_splash_done(struct mdss_mdp_ctl *ctl,
 		ret = mdss_mdp_ctl_intf_event(ctl,
 			MDSS_EVENT_CONT_SPLASH_FINISH, NULL);
 	}
-
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OCTA_VIDEO_FULL_HD_PT_PANEL) || defined(CONFIG_FB_MSM_MDSS_SHARP_HD_PANEL)
+	mdss_mdp_ctl_intf_event(ctl,MDSS_EVENT_CONT_SPLASH_FINISH, NULL);
+#endif
 error:
 	pdata->panel_info.cont_splash_enabled = 0;
-
+#if defined(CONFIG_MACH_LT03_TMO)
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false); // Change suggested by Qcom case : 01710315 for reducing base sleep current
+#endif
 	/* Give back the reserved memory to the system */
-	memblock_free(mdp5_data->splash_mem_addr, mdp5_data->splash_mem_size);
-	free_bootmem_late(mdp5_data->splash_mem_addr,
+	if (!sec_debug_is_enabled()) {
+		memblock_free(mdp5_data->splash_mem_addr, mdp5_data->splash_mem_size);
+		free_bootmem_late(mdp5_data->splash_mem_addr,
 				 mdp5_data->splash_mem_size);
+	}
 
 	return ret;
 }
@@ -667,6 +952,13 @@ int mdss_mdp_video_start(struct mdss_mdp_ctl *ctl)
 		pr_err("mixer not setup correctly\n");
 		return -ENODEV;
 	}
+
+#if defined (CONFIG_FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_WQXGA_PT_PANEL)
+	if (get_lcd_attached() == 0) {
+		pr_err("%s : lcd is not attached..\n",__func__);
+		return 0;
+	}
+#endif
 
 	i = ctl->intf_num - MDSS_MDP_INTF0;
 	if (i < mdata->nintf) {
@@ -732,6 +1024,8 @@ int mdss_mdp_video_start(struct mdss_mdp_ctl *ctl)
 	ctl->add_vsync_handler = mdss_mdp_video_add_vsync_handler;
 	ctl->remove_vsync_handler = mdss_mdp_video_remove_vsync_handler;
 	ctl->config_fps_fnc = mdss_mdp_video_config_fps;
-
+#if defined(CONFIG_FB_MSM_MIPI_MAGNA_OCTA_VIDEO_WXGA_PT_DUAL_PANEL)
+	ctl->panel_switch_reset_fnc = mdss_mdp_video_panel_switch_reset;
+#endif
 	return 0;
 }

@@ -219,6 +219,7 @@ enum adreno_device_flags {
 	ADRENO_DEVICE_PWRON_FIXUP = 1,
 	ADRENO_DEVICE_INITIALIZED = 2,
 	ADRENO_DEVICE_STARTED = 3,
+	ADRENO_DEVICE_HANG_INTR = 4,
 };
 
 #define PERFCOUNTER_FLAG_NONE 0x0
@@ -464,6 +465,7 @@ void adreno_coresight_disable(struct coresight_device *csdev);
 void adreno_coresight_remove(struct platform_device *pdev);
 int adreno_coresight_init(struct platform_device *pdev);
 
+bool adreno_hw_isidle(struct kgsl_device *device);
 int adreno_idle(struct kgsl_device *device);
 bool adreno_isidle(struct kgsl_device *device);
 
@@ -481,10 +483,12 @@ unsigned int adreno_a3xx_rbbm_clock_ctl_default(struct adreno_device
 struct kgsl_memdesc *adreno_find_region(struct kgsl_device *device,
 						phys_addr_t pt_base,
 						unsigned int gpuaddr,
-						unsigned int size);
+						unsigned int size,
+						struct kgsl_mem_entry **entry);
 
 uint8_t *adreno_convertaddr(struct kgsl_device *device,
-	phys_addr_t pt_base, unsigned int gpuaddr, unsigned int size);
+	phys_addr_t pt_base, unsigned int gpuaddr, unsigned int size,
+	struct kgsl_mem_entry **entry);
 
 struct kgsl_memdesc *adreno_find_ctxtmem(struct kgsl_device *device,
 	phys_addr_t pt_base, unsigned int gpuaddr, unsigned int size);
@@ -570,6 +574,8 @@ static inline int adreno_is_a2xx(struct adreno_device *adreno_dev)
 {
 	return (adreno_dev->gpurev <= 299);
 }
+
+bool adreno_hw_isidle(struct kgsl_device *device);
 
 static inline int adreno_is_a3xx(struct adreno_device *adreno_dev)
 {
@@ -902,7 +908,6 @@ adreno_get_rptr(struct adreno_ringbuffer *rb)
 	adreno_readreg(adreno_dev, ADRENO_REG_CP_RB_RPTR, &result);
 	return result;
 }
-
 /*
  * adreno_set_protected_registers() - Protect the specified range of registers
  * from being accessed by the GPU

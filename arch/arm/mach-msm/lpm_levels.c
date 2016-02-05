@@ -18,6 +18,7 @@
 #include <linux/platform_device.h>
 #include <linux/mutex.h>
 #include <linux/cpu.h>
+#include <linux/qpnp/pin.h>
 #include <linux/of.h>
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
@@ -25,6 +26,7 @@
 #include <linux/suspend.h>
 #include <linux/pm_qos.h>
 #include <linux/of_platform.h>
+#include <linux/of_gpio.h>
 #include <mach/mpm.h>
 #include <mach/cpuidle.h>
 #include <mach/event_timer.h>
@@ -32,6 +34,18 @@
 #include "rpm-notifier.h"
 #include "spm.h"
 #include "idle.h"
+#include "clock.h"
+
+#include <mach/gpiomux.h>
+#include <linux/regulator/consumer.h>
+
+#ifdef CONFIG_SEC_GPIO_DVS
+#include <linux/secgpio_dvs.h>
+#endif
+
+#ifdef CONFIG_GPIO_PCAL6416A
+#include <linux/i2c/pcal6416a.h>
+#endif
 
 #define SCLK_HZ (32768)
 
@@ -82,6 +96,7 @@ struct lpm_system_state {
 
 static struct lpm_system_state sys_state;
 static bool suspend_in_progress;
+static int64_t suspend_time;
 
 struct lpm_lookup_table {
 	uint32_t modes;
@@ -122,6 +137,10 @@ module_param_named(
 static int msm_pm_sleep_time_override;
 module_param_named(sleep_time_override,
 	msm_pm_sleep_time_override, int, S_IRUGO | S_IWUSR | S_IWGRP);
+
+static int msm_pm_sleep_sec_debug;
+module_param_named(secdebug,
+	msm_pm_sleep_sec_debug, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
 static int num_powered_cores;
 static struct hrtimer lpm_hrtimer;
@@ -357,6 +376,9 @@ static void lpm_system_prepare(struct lpm_system_state *system_state,
 	}
 
 	lvl = &system_state->system_level[index];
+
+	if(lvl->l2_mode==MSM_SPM_L2_MODE_GDHS)
+		lvl->notify_rpm = false;
 
 	ret = lpm_set_l2_mode(system_state, lvl->l2_mode);
 
@@ -756,7 +778,7 @@ static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 	do_div(time, 1000);
 	dev->last_residency = (int)time;
 	local_irq_enable();
-	return index;
+	return idx;
 }
 
 static int lpm_suspend_enter(suspend_state_t state)
@@ -773,6 +795,7 @@ static int lpm_suspend_enter(suspend_state_t state)
 	if (i < 0)
 		return -EINVAL;
 
+	clock_debug_print_enabled();
 	lpm_enter_low_power(&sys_state, i,  false);
 
 	return 0;
@@ -780,13 +803,53 @@ static int lpm_suspend_enter(suspend_state_t state)
 
 static int lpm_suspend_prepare(void)
 {
+	struct timespec ts;
+
+	getnstimeofday(&ts);
+	suspend_time = timespec_to_ns(&ts);
+
 	suspend_in_progress = true;
 	msm_mpm_suspend_prepare();
+	regulator_showall_enabled();
+
+/* Temporary fix for RUBEN LTE for configuring GPIO 33 to NC configuration
+before entering sleep as some other process is changing it*/
+#if defined (CONFIG_MACH_RUBENSLTE_OPEN)
+	if (gpio_is_valid(33)) {
+		gpio_tlmm_config(GPIO_CFG(33, 0,
+			GPIO_CFG_INPUT,GPIO_CFG_PULL_DOWN,GPIO_CFG_2MA),
+			GPIO_CFG_ENABLE);
+	}
+#endif
+#ifdef CONFIG_SEC_GPIO_DVS
+	/************************ Caution !!! ****************************
+	 * This functiongit a must be located in appropriate SLEEP position
+	 * in accordance with the specification of each BB vendor.
+	 ************************ Caution !!! ****************************/
+	gpio_dvs_check_sleepgpio();
+#endif
+
+#ifdef CONFIG_SEC_PM_DEBUG
+	if (msm_pm_sleep_sec_debug) {
+		msm_gpio_print_enabled();
+		qpnp_debug_suspend_show();
+#ifdef CONFIG_GPIO_PCAL6416A
+		expander_print_all();
+#endif
+	}
+#endif
+
 	return 0;
 }
 
 static void lpm_suspend_wake(void)
 {
+	struct timespec ts;
+
+	getnstimeofday(&ts);
+	suspend_time = timespec_to_ns(&ts) - suspend_time;
+	msm_pm_add_stat(MSM_PM_STAT_SUSPEND, suspend_time);
+
 	msm_mpm_suspend_wake();
 	suspend_in_progress = false;
 }
@@ -970,9 +1033,8 @@ static int lpm_system_probe(struct platform_device *pdev)
 			goto fail;
 		}
 
-		if (l->l2_mode == MSM_SPM_L2_MODE_GDHS ||
-				l->l2_mode == MSM_SPM_L2_MODE_POWER_COLLAPSE)
-			l->notify_rpm = true;
+		key = "qcom,send-rpm-sleep-set";
+		l->notify_rpm = of_property_read_bool(node, key);
 
 		if (l->l2_mode >= MSM_SPM_L2_MODE_GDHS)
 			l->sync = true;
@@ -1076,6 +1138,10 @@ static int lpm_probe(struct platform_device *pdev)
 	get_cpu();
 	on_each_cpu(setup_broadcast_timer, (void *)true, 1);
 	put_cpu();
+	if (num_online_cpus() == 1)
+		allowed_l2_mode = MSM_SPM_L2_MODE_POWER_COLLAPSE;
+	else
+		allowed_l2_mode = default_l2_mode;
 
 	register_hotcpu_notifier(&lpm_cpu_nblk);
 

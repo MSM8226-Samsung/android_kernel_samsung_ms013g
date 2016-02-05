@@ -543,7 +543,7 @@ int vb2_reqbufs(struct vb2_queue *q, struct v4l2_requestbuffers *req)
 	/*
 	 * Make sure the requested values and current defaults are sane.
 	 */
-	num_buffers = min_t(unsigned int, req->count, VIDEO_MAX_FRAME);
+	num_buffers = min_t(unsigned int, req->count, VB2_MAX_FRAME);
 	memset(q->plane_sizes, 0, sizeof(q->plane_sizes));
 	memset(q->alloc_ctx, 0, sizeof(q->alloc_ctx));
 	q->memory = req->memory;
@@ -651,7 +651,7 @@ int vb2_create_bufs(struct vb2_queue *q, struct v4l2_create_buffers *create)
 		return -EINVAL;
 	}
 
-	if (q->num_buffers == VIDEO_MAX_FRAME) {
+	if (q->num_buffers == VB2_MAX_FRAME) {
 		dprintk(1, "%s(): maximum number of buffers already allocated\n",
 			__func__);
 		return -ENOBUFS;
@@ -665,7 +665,7 @@ int vb2_create_bufs(struct vb2_queue *q, struct v4l2_create_buffers *create)
 		q->memory = create->memory;
 	}
 
-	num_buffers = min(create->count, VIDEO_MAX_FRAME - q->num_buffers);
+	num_buffers = min(create->count, VB2_MAX_FRAME - q->num_buffers);
 
 	/*
 	 * Ask the driver, whether the requested number of buffers, planes per
@@ -1104,9 +1104,13 @@ int vb2_qbuf(struct vb2_queue *q, struct v4l2_buffer *b)
 	 * consistent after getting driver's lock back.
 	 */
 	if (q->memory == V4L2_MEMORY_USERPTR) {
-		mmap_sem = &current->active_mm->mmap_sem;
+		bool mm_exists = !!current->mm;
+
+		mmap_sem = mm_exists ? &current->mm->mmap_sem : NULL;
 		call_qop(q, wait_prepare, q);
-		down_read(mmap_sem);
+		/* kthreads have no userspace, hence no pages to lock */
+		if (mmap_sem)
+			down_read(mmap_sem);
 		call_qop(q, wait_finish, q);
 	}
 

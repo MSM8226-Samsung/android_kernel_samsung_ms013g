@@ -27,6 +27,21 @@ config MMC_PERF_PROFILING
 	  If you say Y here, support will be added for collecting
 	  performance numbers at the MMC Queue and Host layers.
 
+config MMC_SUPPORT_STLOG
+	bool "Enable storage log"
+	depends on MMC && PROC_STLOG
+	default y
+
+config SAMSUNG_SDMMC_ENG_TEST
+	bool "enable ENG mode for SD/MMC Setting"
+	default n
+	depends on MMC != n
+	help
+	  If you Say Y here, support will be added for settings
+	  about SD/MMC at the ENG mode only.
+	  This feature must be disabled at the user binary
+	  or it's possible to occur critical issue.
+
 if MMC
 
 source "drivers/mmc/core/Kconfig"

@@ -68,6 +68,7 @@ enum vidc_ports {
 
 enum vidc_core_state {
 	VIDC_CORE_UNINIT = 0,
+	VIDC_CORE_LOADED,
 	VIDC_CORE_INIT,
 	VIDC_CORE_INIT_DONE,
 	VIDC_CORE_INVALID
@@ -190,8 +191,12 @@ struct msm_vidc_core_capability {
 	u32 pixelprocess_capabilities;
 	struct hal_capability_supported scale_x;
 	struct hal_capability_supported scale_y;
+	struct hal_capability_supported ltr_count;
+	struct hal_capability_supported hier_p;
+	struct hal_capability_supported mbs_per_frame;
 	u32 capability_set;
 	enum buffer_mode_type buffer_mode[MAX_PORT_NUM];
+	u32 buffer_size_limit;
 };
 
 struct msm_vidc_core {

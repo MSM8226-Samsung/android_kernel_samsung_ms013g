@@ -22,6 +22,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <linux/swap.h>
 #include "ion_priv.h"
 
 struct ion_page_pool_item {
@@ -40,8 +41,7 @@ static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool)
 		return NULL;
 
 	if (pool->gfp_mask & __GFP_ZERO)
-		if (ion_heap_high_order_page_zero(
-				page, pool->order, pool->should_invalidate))
+		if (ion_heap_high_order_page_zero(page, pool->order))
 			goto error_free_pages;
 
 	sg_init_table(&sg, 1);
@@ -152,6 +152,9 @@ int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
 
 	high = gfp_mask & __GFP_HIGHMEM;
 
+	if (current_is_kswapd())
+		high = 1;
+
 	if (nr_to_scan == 0)
 		return ion_page_pool_total(pool, high);
 
@@ -175,8 +178,7 @@ int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
 	return nr_freed;
 }
 
-struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order,
-	bool should_invalidate)
+struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order)
 {
 	struct ion_page_pool *pool = kmalloc(sizeof(struct ion_page_pool),
 					     GFP_KERNEL);
@@ -188,7 +190,6 @@ struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order,
 	INIT_LIST_HEAD(&pool->high_items);
 	pool->gfp_mask = gfp_mask;
 	pool->order = order;
-	pool->should_invalidate = should_invalidate;
 	mutex_init(&pool->mutex);
 	plist_node_init(&pool->list, order);
 

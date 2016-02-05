@@ -1,6 +1,6 @@
 /* Qualcomm Crypto driver
  *
- * Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1430,7 +1430,7 @@ static int _qcrypto_process_ahash(struct crypto_engine *pengine,
 static int _qcrypto_process_aead(struct  crypto_engine *pengine,
 				struct crypto_async_request *async_req)
 {
-	struct qce_req qreq;
+	struct qce_req qreq = {0};
 	int ret = 0;
 	struct qcrypto_cipher_req_ctx *rctx;
 	struct qcrypto_cipher_ctx *cipher_ctx;
@@ -3237,6 +3237,16 @@ static int _sha256_hmac_digest(struct ahash_request *req)
 	return _sha_digest(req);
 }
 
+static int _qcrypto_prefix_alg_cra_name(char cra_name[], unsigned int size)
+{
+	char new_cra_name[CRYPTO_MAX_ALG_NAME] = "qcom-";
+	if (size >= CRYPTO_MAX_ALG_NAME - strlen("qcom-"))
+		return -EINVAL;
+	strlcat(new_cra_name, cra_name, CRYPTO_MAX_ALG_NAME);
+	strlcpy(cra_name, new_cra_name, CRYPTO_MAX_ALG_NAME);
+	return 0;
+}
+
 int qcrypto_cipher_set_flag(struct ablkcipher_request *req, unsigned int flags)
 {
 	struct qcrypto_cipher_ctx *ctx = crypto_tfm_ctx(req->base.tfm);
@@ -3868,6 +3878,17 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 			rc = PTR_ERR(q_alg);
 			goto err;
 		}
+		if (cp->ce_support.use_sw_aes_cbc_ecb_ctr_algo) {
+			rc = _qcrypto_prefix_alg_cra_name(
+					q_alg->cipher_alg.cra_name,
+					strlen(q_alg->cipher_alg.cra_name));
+			if (rc) {
+				dev_err(&pdev->dev,
+					"The algorithm name %s is too long.\n",
+					q_alg->cipher_alg.cra_name);
+				goto err;
+			}
+		}
 		rc = crypto_register_alg(&q_alg->cipher_alg);
 		if (rc) {
 			dev_err(&pdev->dev, "%s alg registration failed\n",
@@ -3889,6 +3910,17 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 		if (IS_ERR(q_alg)) {
 			rc = PTR_ERR(q_alg);
 			goto err;
+		}
+		if (cp->ce_support.use_sw_aes_xts_algo) {
+			rc = _qcrypto_prefix_alg_cra_name(
+					q_alg->cipher_alg.cra_name,
+					strlen(q_alg->cipher_alg.cra_name));
+			if (rc) {
+				dev_err(&pdev->dev,
+					"The algorithm name %s is too long.\n",
+					q_alg->cipher_alg.cra_name);
+				goto err;
+			}
 		}
 		rc = crypto_register_alg(&q_alg->cipher_alg);
 		if (rc) {
@@ -3915,7 +3947,17 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 			rc = PTR_ERR(q_alg);
 			goto err;
 		}
-
+		if (cp->ce_support.use_sw_ahash_algo) {
+			rc = _qcrypto_prefix_alg_cra_name(
+				q_alg->sha_alg.halg.base.cra_name,
+				strlen(q_alg->sha_alg.halg.base.cra_name));
+			if (rc) {
+				dev_err(&pdev->dev,
+					"The algorithm name %s is too long.\n",
+					q_alg->sha_alg.halg.base.cra_name);
+				goto err;
+			}
+		}
 		rc = crypto_register_ahash(&q_alg->sha_alg);
 		if (rc) {
 			dev_err(&pdev->dev, "%s alg registration failed\n",
@@ -3941,7 +3983,17 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 				rc = PTR_ERR(q_alg);
 				goto err;
 			}
-
+			if (cp->ce_support.use_sw_aead_algo) {
+				rc = _qcrypto_prefix_alg_cra_name(
+					q_alg->cipher_alg.cra_name,
+					strlen(q_alg->cipher_alg.cra_name));
+				if (rc) {
+					dev_err(&pdev->dev,
+						"The algorithm name %s is too long.\n",
+						q_alg->cipher_alg.cra_name);
+					goto err;
+				}
+			}
 			rc = crypto_register_alg(&q_alg->cipher_alg);
 			if (rc) {
 				dev_err(&pdev->dev,
@@ -3968,7 +4020,18 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 				rc = PTR_ERR(q_alg);
 				goto err;
 			}
-
+			if (cp->ce_support.use_sw_hmac_algo) {
+				rc = _qcrypto_prefix_alg_cra_name(
+					q_alg->sha_alg.halg.base.cra_name,
+					strlen(
+					q_alg->sha_alg.halg.base.cra_name));
+				if (rc) {
+					dev_err(&pdev->dev,
+					     "The algorithm name %s is too long.\n",
+					     q_alg->sha_alg.halg.base.cra_name);
+					goto err;
+				}
+			}
 			rc = crypto_register_ahash(&q_alg->sha_alg);
 			if (rc) {
 				dev_err(&pdev->dev,
@@ -3994,6 +4057,17 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 			rc = PTR_ERR(q_alg);
 			goto err;
 		}
+		if (cp->ce_support.use_sw_aes_ccm_algo) {
+			rc = _qcrypto_prefix_alg_cra_name(
+					q_alg->cipher_alg.cra_name,
+					strlen(q_alg->cipher_alg.cra_name));
+			if (rc) {
+				dev_err(&pdev->dev,
+						"The algorithm name %s is too long.\n",
+						q_alg->cipher_alg.cra_name);
+				goto err;
+			}
+		}
 		rc = crypto_register_alg(&q_alg->cipher_alg);
 		if (rc) {
 			dev_err(&pdev->dev, "%s alg registration failed\n",
@@ -4018,6 +4092,100 @@ err:
 };
 
 
+static int  _qcrypto_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	int ret = 0;
+	struct crypto_engine *pengine;
+	struct crypto_priv *cp;
+
+	pengine = platform_get_drvdata(pdev);
+	if (!pengine)
+		return -EINVAL;
+
+	/*
+	 * Check if this platform supports clock management in suspend/resume
+	 * If not, just simply return 0.
+	 */
+	cp = pengine->pcp;
+	if (!cp->ce_support.clk_mgmt_sus_res)
+		return 0;
+
+	mutex_lock(&cp->engine_lock);
+
+	if (pengine->high_bw_req) {
+		del_timer_sync(&(pengine->bw_scale_down_timer));
+		ret = msm_bus_scale_client_update_request(
+				pengine->bus_scale_handle, 0);
+		if (ret) {
+			dev_err(&pdev->dev, "%s Unable to set to low bandwidth\n",
+					__func__);
+			mutex_unlock(&cp->engine_lock);
+			return ret;
+		}
+		ret = qce_disable_clk(pengine->qce);
+		if (ret) {
+			pr_err("%s Unable disable clk\n", __func__);
+			ret = msm_bus_scale_client_update_request(
+				pengine->bus_scale_handle, 1);
+			if (ret)
+				dev_err(&pdev->dev,
+					"%s Unable to set to high bandwidth\n",
+					__func__);
+			mutex_unlock(&cp->engine_lock);
+			return ret;
+		}
+	}
+
+	mutex_unlock(&cp->engine_lock);
+	return 0;
+}
+
+static int  _qcrypto_resume(struct platform_device *pdev)
+{
+	int ret = 0;
+	struct crypto_engine *pengine;
+	struct crypto_priv *cp;
+
+	pengine = platform_get_drvdata(pdev);
+
+	if (!pengine)
+		return -EINVAL;
+
+	cp = pengine->pcp;
+	if (!cp->ce_support.clk_mgmt_sus_res)
+		return 0;
+
+	mutex_lock(&cp->engine_lock);
+	if (pengine->high_bw_req) {
+		ret = qce_enable_clk(pengine->qce);
+		if (ret) {
+			dev_err(&pdev->dev, "%s Unable to enable clk\n",
+				__func__);
+			mutex_unlock(&cp->engine_lock);
+			return ret;
+		}
+		ret = msm_bus_scale_client_update_request(
+				pengine->bus_scale_handle, 1);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"%s Unable to set to high bandwidth\n",
+				__func__);
+			qce_disable_clk(pengine->qce);
+			mutex_unlock(&cp->engine_lock);
+			return ret;
+		}
+		pengine->bw_scale_down_timer.data =
+					(unsigned long)(pengine);
+		pengine->bw_scale_down_timer.expires = jiffies +
+			msecs_to_jiffies(QCRYPTO_HIGH_BANDWIDTH_TIMEOUT);
+		add_timer(&(pengine->bw_scale_down_timer));
+	}
+
+	mutex_unlock(&cp->engine_lock);
+
+	return 0;
+}
+
 static struct of_device_id qcrypto_match[] = {
 	{	.compatible = "qcom,qcrypto",
 	},
@@ -4027,6 +4195,8 @@ static struct of_device_id qcrypto_match[] = {
 static struct platform_driver _qualcomm_crypto = {
 	.probe          = _qcrypto_probe,
 	.remove         = _qcrypto_remove,
+	.suspend        = _qcrypto_suspend,
+	.resume         = _qcrypto_resume,
 	.driver         = {
 		.owner  = THIS_MODULE,
 		.name   = "qcrypto",

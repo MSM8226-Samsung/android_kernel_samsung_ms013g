@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 and
@@ -15,6 +15,10 @@
 #define _APR_AUDIO_V2_H_
 
 #include <mach/qdsp6v2/apr.h>
+
+#ifdef CONFIG_SND_SOC_MAXIM_DSM
+#include <sound/maxim_dsm.h>
+#endif
 
 #define ADSP_ADM_VERSION    0x00070000
 
@@ -577,6 +581,15 @@ struct adm_cmd_matrix_mute_v5 {
 
 	u16                 reserved_for_align;
 	/* Clients must set this field to zero.*/
+} __packed;
+
+#define ASM_PARAM_ID_AAC_STEREO_MIX_COEFF_SELECTION_FLAG_V2 (0x00010DD8)
+
+struct asm_aac_stereo_mix_coeff_selection_param_v2 {
+	struct apr_hdr          hdr;
+	u32                     param_id;
+	u32                     param_size;
+	u32                     aac_stereo_mix_coeff_flag;
 } __packed;
 
 /* Allows a client to connect the desired stream to
@@ -2255,6 +2268,9 @@ struct afe_port_cmdrsp_get_param_v2 {
 #define VPM_TX_SM_ECNS_COPP_TOPOLOGY			0x00010F71
 #define VPM_TX_DM_FLUENCE_COPP_TOPOLOGY			0x00010F72
 #define VPM_TX_QMIC_FLUENCE_COPP_TOPOLOGY		0x00010F75
+
+// NXP LVVEFQ
+#define VPM_TX_SM_LVVE_COPP_TOPOLOGY	0x1000BFFF
 
 /* Memory map regions command payload used by the
  * #ASM_CMD_SHARED_MEM_MAP_REGIONS ,#ADM_CMD_SHARED_MEM_MAP_REGIONS
@@ -6570,6 +6586,52 @@ struct afe_spkr_prot_config_command {
 	union afe_spkr_prot_config prot_config;
 } __packed;
 
+#ifdef CONFIG_SND_SOC_MAXIM_DSM
+struct afe_dsm_filter_set_params_t {
+  uint32_t dcResistance;
+  uint32_t coilTemp;
+  uint32_t qualityfactor;
+  uint32_t resonanceFreq;
+  uint32_t excursionMeasure;
+  uint32_t rdcroomtemp;
+  uint32_t releasetime;
+  uint32_t coilthermallimit;
+  uint32_t excursionlimit;
+  uint32_t dsmenabled;
+  uint32_t staticgain;
+  uint32_t lfxgain;
+  uint32_t pilotgain;
+  uint32_t flagToWrite;
+  uint32_t featureSetEnable;
+  uint32_t smooFacVoltClip;
+  uint32_t highPassCutOffFactor;
+  uint32_t leadResistance;
+  uint32_t rmsSmooFac;
+  uint32_t clipLimit;
+  uint32_t thermalCoeff;
+  uint32_t qSpk;
+  uint32_t excurLoggingThresh;
+  uint32_t coilTempLoggingThresh;
+  uint32_t resFreq;
+  uint32_t resFreqGuardBand;
+} __packed;
+
+union afe_dsm_spkr_prot_config {
+	struct asm_fbsp_mode_rx_cfg mode_rx_cfg;
+	struct asm_spkr_calib_vi_proc_cfg vi_proc_cfg;
+	struct asm_feedback_path_cfg feedback_path_cfg;
+	struct asm_mode_vi_proc_cfg mode_vi_proc_cfg;
+	struct afe_dsm_filter_set_params_t mode_dsm_proc_cfg;
+} __packed;
+
+struct afe_dsm_spkr_prot_config_command {
+	struct apr_hdr hdr;
+	struct afe_port_cmd_set_param_v2 param;
+	struct afe_port_param_data_v2 pdata;
+	union afe_dsm_spkr_prot_config prot_config;
+} __packed;
+#endif
+
 struct afe_spkr_prot_get_vi_calib {
 	struct afe_port_cmd_get_param_v2 get_param;
 	struct afe_port_param_data_v2 pdata;
@@ -6581,6 +6643,54 @@ struct afe_spkr_prot_calib_get_resp {
 	struct afe_port_param_data_v2 pdata;
 	struct asm_calib_res_cfg res_cfg;
 } __packed;
+
+#ifdef CONFIG_SND_SOC_MAXIM_DSM
+struct afe_dsm_filter_get_params_t {
+  uint32_t dcResistance;
+  uint32_t coilTemp;
+  uint32_t qualityfactor;
+  uint32_t resonanceFreq;
+  uint32_t excursionMeasure;
+  uint32_t rdcroomtemp;
+  uint32_t releasetime;
+  uint32_t coilthermallimit;
+  uint32_t excursionlimit;
+  uint32_t dsmenabled;
+  uint32_t staticgain;
+  uint32_t lfxgain;
+  uint32_t pilotgain;
+  uint32_t flagToWrite;
+  uint32_t featureSetEnable;
+  uint32_t smooFacVoltClip;
+  uint32_t highPassCutOffFactor;
+  uint32_t leadResistance;
+  uint32_t rmsSmooFac;
+  uint32_t clipLimit;
+  uint32_t thermalCoeff;
+  uint32_t qSpk;
+  uint32_t excurLoggingThresh;
+  uint32_t coilTempLoggingThresh;
+  uint32_t resFreq;
+  uint32_t resFreqGuardBand;
+#ifdef USE_DSM_LOG
+  uint8_t  byteLogArray[BEFORE_BUFSIZE];
+  uint32_t intLogArray[BEFORE_BUFSIZE];
+  uint8_t  afterProbByteLogArray[AFTER_BUFSIZE];
+  uint32_t afterProbIntLogArray[AFTER_BUFSIZE];
+#endif
+} __packed;
+
+struct afe_dsm_spkr_prot_get_vi_calib {
+	struct afe_port_cmd_get_param_v2 get_param;
+	struct afe_port_param_data_v2 pdata;
+	struct afe_dsm_filter_get_params_t res_cfg;
+} __packed;
+struct afe_dsm_spkr_prot_calib_get_resp {
+	uint32_t status;
+	struct afe_port_param_data_v2 pdata;
+	struct afe_dsm_filter_get_params_t res_cfg;
+} __packed;
+#endif
 
 
 /* SRS TRUMEDIA start */
@@ -6979,6 +7089,102 @@ struct afe_lpass_digital_clk_config_command {
 	struct afe_digital_clk_cfg clk_cfg;
 } __packed;
 
+#define ASM_MODULE_ID_PP_SA                 0x10001fa0
+#define ASM_PARAM_ID_PP_SA_PARAMS           0x10001fa1
+
+//#define ASM_MODULE_ID_PP_SA_VOL             0x10001fa3
+//#define ASM_PARAM_ID_PP_SA_VOLUME           0x10001fa4
+#define ASM_MODULE_ID_PP_SA_VSP             0x10001fb0
+#define ASM_PARAM_ID_PP_SA_VSP_PARAMS       0x10001fb1
+
+#define ASM_MODULE_ID_PP_DHA                0x10001fc0
+#define ASM_PARAM_ID_PP_DHA_PARAMS          0x10001fc1
+
+#define ASM_MODULE_ID_PP_LRSM               0x10001fe0
+#define ASM_PARAM_ID_PP_LRSM_PARAMS         0x10001fe1
+
+#define ASM_MODULE_ID_PP_SA_EP              0x10001fd0
+#define ASM_PARAM_ID_PP_SA_EP_PARAMS        0x10001fd1
+#define ASM_PARAM_ID_PP_SA_EP_GET_PARAMS    0x10001fd2
+
+struct sa_params {
+	int16_t OutDevice;
+	int16_t Preset;
+	int32_t EqLev[7];
+	int16_t m3Dlevel;
+	int16_t BElevel;
+	int16_t CHlevel;
+	int16_t CHRoomSize; 
+	int16_t Clalevel;
+	int16_t volume;
+	int16_t Sqrow;
+	int16_t Sqcol;
+	int16_t TabInfo;
+	int16_t NewUI;
+} __packed;
+
+struct vsp_params {
+	uint32_t speed_int;
+} __packed ;
+
+struct dha_params {
+	int32_t enable;
+	int16_t gain[2][6];
+} __packed ;
+
+struct lrsm_params {
+	int16_t sm;
+	int16_t lr;
+} __packed ;
+
+struct sa_ep_params {
+	int32_t enable;
+	int32_t score;
+} __packed ;
+
+struct asm_stream_cmd_set_pp_params_sa {
+	struct apr_hdr	hdr;
+	struct asm_stream_cmd_set_pp_params_v2 param;
+	struct asm_stream_param_data_v2 data;
+
+	struct sa_params sa_param;
+} __packed;
+
+struct asm_stream_cmd_set_pp_params_vsp {
+	struct apr_hdr	hdr;
+	struct asm_stream_cmd_set_pp_params_v2 param;
+	struct asm_stream_param_data_v2 data;
+
+	uint32_t speed_int;
+} __packed;
+
+struct asm_stream_cmd_set_pp_params_dha {
+	struct apr_hdr	hdr;
+	struct asm_stream_cmd_set_pp_params_v2 param;
+	struct asm_stream_param_data_v2 data;
+
+	int32_t enable;
+	int16_t gain[2][6];
+} __packed;
+
+struct asm_stream_cmd_set_pp_params_lrsm {
+	struct apr_hdr	hdr;
+	struct asm_stream_cmd_set_pp_params_v2 param;
+	struct asm_stream_param_data_v2 data;
+
+	int16_t sm;
+	int16_t lr;
+} __packed;
+
+struct asm_stream_cmd_set_pp_params_sa_ep {
+	struct apr_hdr	hdr;
+	struct asm_stream_cmd_set_pp_params_v2 param;
+	struct asm_stream_param_data_v2 data;
+
+	int32_t enable;
+	int32_t score;
+} __packed;
+
 /*
  * Opcode for AFE to start DTMF.
  */
@@ -7174,5 +7380,4 @@ struct afe_svc_cmd_set_clip_bank_selection {
 #define US_PROX_FORMAT_V2       0x0001272E
 #define US_RAW_SYNC_FORMAT      0x0001272F
 #define US_GES_SYNC_FORMAT      0x00012730
-
 #endif /*_APR_AUDIO_V2_H_ */

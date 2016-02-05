@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,8 @@
 #define MDSS_MDP_HW_REV_100		0x10000000
 #define MDSS_MDP_HW_REV_102		0x10020000
 #define MDSS_MDP_HW_REV_103		0x10030000
+
+#define MDSS_MDP_FETCH_CONFIG_RESET_VALUE	0x00000087
 
 #define MDSS_REG_HW_VERSION				0x0
 #define MDSS_REG_HW_INTR_STATUS				0x10
@@ -438,6 +440,7 @@ enum mdss_mdp_dspp_index {
 #define MDSS_MDP_REG_DSPP_HIST_CTL_BASE			0x210
 #define MDSS_MDP_REG_DSPP_HIST_LUT_BASE			0x230
 #define MDSS_MDP_REG_DSPP_PA_BASE			0x238
+#define MDSS_MDP_REG_DSPP_SIX_ZONE_BASE			0x248
 #define MDSS_MDP_REG_DSPP_GAMUT_BASE			0x2DC
 #define MDSS_MDP_REG_DSPP_GC_BASE			0x2B0
 
@@ -578,5 +581,9 @@ enum mdss_mdp_pingpong_index {
 #define MDSS_MDP_LP_MISR_SEL_LMIX3_GC		0x0F
 #define MDSS_MDP_LP_MISR_SEL_LMIX4_BLEND	0x10
 #define MDSS_MDP_LP_MISR_SEL_LMIX4_GC		0x11
+
+/* following offsets are with respect to MDP VBIF base */
+#define MMSS_VBIF_XIN_HALT_CTRL0	0x200
+#define MMSS_VBIF_XIN_HALT_CTRL1	0x204
 
 #endif

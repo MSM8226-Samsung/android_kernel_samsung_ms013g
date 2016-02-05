@@ -21,6 +21,7 @@
 #include <linux/ktime.h>
 #include <linux/smp.h>
 #include <linux/tick.h>
+#include <linux/sched.h>
 #include <linux/delay.h>
 #include <linux/platform_device.h>
 #include <linux/of_platform.h>
@@ -41,6 +42,10 @@
 #include "scm-boot.h"
 #include "spm.h"
 #include "pm-boot.h"
+#include "clock.h"
+#ifdef CONFIG_SEC_DEBUG
+#include <mach/sec_debug.h>
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <mach/trace_msm_low_power.h>
@@ -530,6 +535,10 @@ static int msm_pm_collapse(unsigned long unused)
 	return 0;
 }
 
+#ifdef CONFIG_SEC_PM_DEBUG
+extern int sec_print_masters_stats(void);
+#endif
+
 static bool __ref msm_pm_spm_power_collapse(
 	unsigned int cpu, bool from_idle, bool notify_rpm)
 {
@@ -559,8 +568,23 @@ static bool __ref msm_pm_spm_power_collapse(
 
 	msm_jtag_save_state();
 
+#ifdef CONFIG_SEC_DEBUG
+	secdbg_sched_msg("+pc(I:%d,R:%d)", from_idle, notify_rpm);
+#endif
+
 	collapsed = save_cpu_regs ?
 		!cpu_suspend(0, msm_pm_collapse) : msm_pm_pc_hotplug();
+
+
+#ifdef CONFIG_SEC_PM_DEBUG
+	if(from_idle == false && cpu == 0 && sec_debug_is_enabled()){
+		sec_print_masters_stats();
+	}
+#endif
+
+#ifdef CONFIG_SEC_DEBUG
+	secdbg_sched_msg("-pc(%d)", collapsed);
+#endif
 
 	if (save_cpu_regs) {
 		spin_lock(&cpu_cnt_lock);
@@ -676,6 +700,14 @@ static enum msm_pm_time_stats_id msm_pm_power_collapse(bool from_idle)
 	if (MSM_PM_DEBUG_POWER_COLLAPSE & msm_pm_debug_mask)
 		pr_info("CPU%u: %s: pre power down\n", cpu, __func__);
 
+	/* This spews a lot of messages when a core is hotplugged. This
+	 * information is most useful from last core going down during
+	 * power collapse
+	 */
+	if ((!from_idle && cpu_online(cpu))
+			|| (MSM_PM_DEBUG_IDLE_CLK & msm_pm_debug_mask))
+		clock_debug_print_enabled();
+
 	avsdscr = avs_get_avsdscr();
 	avscsr = avs_get_avscsr();
 	avs_set_avscsr(0); /* Disable AVS */
@@ -790,29 +822,35 @@ int msm_cpu_pm_enter_sleep(enum msm_pm_sleep_mode mode, bool from_idle)
 		pr_info("CPU%u: %s mode:%d\n",
 			smp_processor_id(), __func__, mode);
 
-	time = sched_clock();
+	if (from_idle)
+		time = sched_clock();
+
 	if (execute[mode])
 		exit_stat = execute[mode](from_idle);
-	time = sched_clock() - time;
-	if (from_idle)
+
+	if (from_idle) {
+		time = sched_clock() - time;
 		msm_pm_ftrace_lpm_exit(smp_processor_id(), mode, collapsed);
-	else
-		exit_stat = MSM_PM_STAT_SUSPEND;
-	if (exit_stat >= 0)
-		msm_pm_add_stat(exit_stat, time);
-	do_div(time, 1000);
+		if (exit_stat >= 0)
+			msm_pm_add_stat(exit_stat, time);
+	}
+
 	return collapsed;
 }
 
 int msm_pm_wait_cpu_shutdown(unsigned int cpu)
 {
-	int timeout = 10;
+	int timeout = 50;
 
 	if (!msm_pm_slp_sts)
 		return 0;
 	if (!msm_pm_slp_sts[cpu].base_addr)
 		return 0;
+#if defined(CONFIG_ARCH_MSM8974) || defined(CONFIG_ARCH_MSM8974PRO)
 	while (1) {
+#else
+	while (timeout--) {
+#endif
 		/*
 		 * Check for the SPM of the core being hotplugged to set
 		 * its sleep state.The SPM sleep state indicates that the
@@ -823,9 +861,14 @@ int msm_pm_wait_cpu_shutdown(unsigned int cpu)
 		if (acc_sts & msm_pm_slp_sts[cpu].mask)
 			return 0;
 		udelay(100);
+#if defined(CONFIG_ARCH_MSM8974) || defined(CONFIG_ARCH_MSM8974PRO)
 		WARN(++timeout == 20, "CPU%u didn't collapse in 2 ms\n", cpu);
+#endif
 	}
-
+#if !(defined(CONFIG_ARCH_MSM8974) || defined(CONFIG_ARCH_MSM8974PRO))
+	pr_info("%s(): Timed out waiting for CPU %u SPM to enter sleep state",
+		__func__, cpu);
+#endif
 	return -EBUSY;
 }
 

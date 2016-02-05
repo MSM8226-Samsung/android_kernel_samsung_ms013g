@@ -50,6 +50,13 @@ struct dsi_host_v2_private {
 static struct dsi_host_v2_private *dsi_host_private;
 static int msm_dsi_clk_ctrl(struct mdss_panel_data *pdata, int enable);
 
+#if defined(CONFIG_FB_MSM_MDSS_DSI_DBG)
+extern int dsi_ctrl_on;
+extern unsigned char *dsi_ctrl_base;
+extern void dumpreg(void);
+extern void mdp3_dump_clk(void);
+#endif
+
 int msm_dsi_init(void)
 {
 	if (!dsi_host_private) {
@@ -285,6 +292,11 @@ static int msm_dsi_wait4mdp_done(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	if (rc == 0) {
 		pr_err("DSI wait 4 mdp done time out\n");
+#if defined(CONFIG_FB_MSM_MDSS_DSI_DBG)
+		dumpreg();
+		mdp3_dump_clk();
+		panic("DSI wait 4 mdp done time out");
+#endif
 		rc = -ETIME;
 	} else if (!IS_ERR_VALUE(rc)) {
 		rc = 0;
@@ -586,6 +598,19 @@ int msm_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	unsigned char *ctrl_base = dsi_host_private->dsi_base;
 	unsigned long flag;
 
+#if defined(CONFIG_DSI_HOST_DEBUG)
+	int i = 0;
+	char *bp;
+
+	bp = tp->data;
+
+	printk("%s: ", __func__);
+	for (i = 0; i < tp->len; i++)
+		printk("%02X ", *bp++);
+
+	printk("\n");
+#endif
+
 	len = ALIGN(tp->len, 4);
 	size = ALIGN(tp->len, SZ_4K);
 
@@ -615,6 +640,10 @@ int msm_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	rc = wait_for_completion_timeout(&ctrl->dma_comp,
 				msecs_to_jiffies(DSI_DMA_CMD_TIMEOUT_MS));
 	if (rc == 0) {
+#if defined(CONFIG_FB_MSM_MDSS_DSI_DBG)
+		dumpreg();
+		mdp3_dump_clk();
+#endif
 		pr_err("DSI command transaction time out\n");
 		rc = -ETIME;
 	} else if (!IS_ERR_VALUE(rc)) {
@@ -959,10 +988,16 @@ int msm_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 
 	msm_dsi_clk_ctrl(&ctrl->panel_data, 1);
 
+	if (0 == (req->flags & CMD_REQ_LP_MODE))
+		dsi_set_tx_power_mode(0);
+
 	if (req->flags & CMD_REQ_RX)
 		msm_dsi_cmdlist_rx(ctrl, req);
 	else
 		msm_dsi_cmdlist_tx(ctrl, req);
+
+	if (0 == (req->flags & CMD_REQ_LP_MODE))
+		dsi_set_tx_power_mode(1);
 
 	msm_dsi_clk_ctrl(&ctrl->panel_data, 0);
 
@@ -1136,6 +1171,9 @@ static int msm_dsi_on(struct mdss_panel_data *pdata)
 	msm_dsi_set_irq(ctrl_pdata, DSI_INTR_ERROR_MASK);
 	dsi_host_private->clk_count = 1;
 	dsi_host_private->dsi_on = 1;
+#if defined(CONFIG_FB_MSM_MDSS_DSI_DBG)
+	dsi_ctrl_on = dsi_host_private->dsi_on;
+#endif
 	mutex_unlock(&ctrl_pdata->mutex);
 
 	return ret;
@@ -1173,6 +1211,9 @@ static int msm_dsi_off(struct mdss_panel_data *pdata)
 	}
 	dsi_host_private->clk_count = 0;
 	dsi_host_private->dsi_on = 0;
+#if defined(CONFIG_FB_MSM_MDSS_DSI_DBG)
+	dsi_ctrl_on = dsi_host_private->dsi_on;
+#endif
 
 	mutex_unlock(&ctrl_pdata->mutex);
 
@@ -1207,6 +1248,13 @@ static int msm_dsi_cont_on(struct mdss_panel_data *pdata)
 		mutex_unlock(&ctrl_pdata->mutex);
 		return ret;
 	}
+	pinfo->panel_power_on = 1;
+	ret = mdss_dsi_panel_reset(pdata, 1);
+	if (ret) {
+		pr_err("%s: Panel reset failed\n", __func__);
+		mutex_unlock(&ctrl_pdata->mutex);
+		return ret;
+	}
 
 	msm_dsi_ahb_ctrl(1);
 	msm_dsi_prepare_clocks();
@@ -1214,6 +1262,9 @@ static int msm_dsi_cont_on(struct mdss_panel_data *pdata)
 	msm_dsi_set_irq(ctrl_pdata, DSI_INTR_ERROR_MASK);
 	dsi_host_private->clk_count = 1;
 	dsi_host_private->dsi_on = 1;
+#if defined(CONFIG_FB_MSM_MDSS_DSI_DBG)
+	dsi_ctrl_on = dsi_host_private->dsi_on;
+#endif
 	mutex_unlock(&ctrl_pdata->mutex);
 	return 0;
 }
@@ -1486,6 +1537,10 @@ static int __devinit msm_dsi_probe(struct platform_device *pdev)
 			rc = -ENOMEM;
 			goto error_io_resource;
 		}
+#if defined(CONFIG_FB_MSM_MDSS_DSI_DBG)
+		dsi_ctrl_base = dsi_host_private->dsi_base;
+		dsi_ctrl_on = dsi_host_private->dsi_on;
+#endif
 	}
 
 	mdss_dsi_mres = platform_get_resource(pdev, IORESOURCE_IRQ, 0);

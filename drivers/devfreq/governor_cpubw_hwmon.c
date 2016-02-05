@@ -78,7 +78,7 @@ static DEVICE_ATTR(__attr, 0644, show_##__attr, store_##__attr)
 static int l2pm_irq;
 static unsigned int bytes_per_beat;
 static unsigned int tolerance_percent = 10;
-static unsigned int guard_band_mbps = 100;
+static unsigned int guard_band_mbps = 70;
 static unsigned int decay_rate = 90;
 static unsigned int io_percent = 16;
 static unsigned int bw_step = 190;
@@ -246,9 +246,8 @@ static void compute_bw(int mbps, unsigned long *freq, unsigned long *ab)
 		new_bw /= 100;
 	}
 
-	prev_ab = new_bw;
-	*ab = roundup(new_bw, bw_step);
-	*freq = (new_bw * 100) / io_percent;
+	*ab = roundup(mbps, bw_step);
+	*freq = (mbps * 100) / io_percent;
 }
 
 #define TOO_SOON_US	(1 * USEC_PER_MSEC)
@@ -341,6 +340,7 @@ static int devfreq_cpubw_hwmon_get_freq(struct devfreq *df,
 
 	mbps = measure_bw_and_set_irq();
 	compute_bw(mbps, freq, df->data);
+	prev_ab = *(unsigned long *) df->data;
 
 	return 0;
 }

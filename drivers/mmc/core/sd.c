@@ -494,6 +494,9 @@ static void sd_update_bus_speed_mode(struct mmc_card *card)
 	if ((card->host->caps & MMC_CAP_UHS_SDR104) &&
 	    (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104) &&
 	    (card->host->f_max > UHS_SDR104_MIN_DTR)) {
+		if (((card->cid.manfid == 0x1b) || (card->cid.manfid == 0x74)) && mmc_card_ext_capacity(card))
+			card->sd_bus_speed = UHS_SDR50_BUS_SPEED;
+		else
 			card->sd_bus_speed = UHS_SDR104_BUS_SPEED;
 	} else if ((card->host->caps & MMC_CAP_UHS_DDR50) &&
 		   (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_DDR50) &&
@@ -769,7 +772,8 @@ MMC_DEV_ATTR(manfid, "0x%06x\n", card->cid.manfid);
 MMC_DEV_ATTR(name, "%s\n", card->cid.prod_name);
 MMC_DEV_ATTR(oemid, "0x%04x\n", card->cid.oemid);
 MMC_DEV_ATTR(serial, "0x%08x\n", card->cid.serial);
-
+MMC_DEV_ATTR(caps, "0x%08x\n", (unsigned int)(card->host->caps));
+MMC_DEV_ATTR(caps2, "0x%08x\n", card->host->caps2);
 
 static struct attribute *sd_std_attrs[] = {
 	&dev_attr_cid.attr,
@@ -784,6 +788,8 @@ static struct attribute *sd_std_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_oemid.attr,
 	&dev_attr_serial.attr,
+	&dev_attr_caps.attr,
+	&dev_attr_caps2.attr,
 	NULL,
 };
 
@@ -851,6 +857,7 @@ try_again:
 	   ((*rocr & 0x41000000) == 0x41000000)) {
 		err = mmc_set_signal_voltage(host, MMC_SIGNAL_VOLTAGE_180, true);
 		if (err) {
+			mmc_power_cycle(host);
 			ocr &= ~SD_OCR_S18R;
 			goto try_again;
 		}
@@ -1009,6 +1016,7 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	int err;
 	u32 cid[4];
 	u32 rocr = 0;
+	u32 status;
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
@@ -1117,6 +1125,11 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	return 0;
 
 free_card:
+	if (mmc_send_status(card, &status))
+		pr_err("%s: %s: Get card status fail\n", __func__, mmc_hostname(card->host));
+	else
+		pr_info("%s: card status is 0x%.8x\n", __func__, status);
+
 	if (!oldcard)
 		mmc_remove_card(card);
 
@@ -1154,7 +1167,7 @@ static void mmc_sd_detect(struct mmc_host *host)
 {
 	int err = 0;
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
-        int retries = 5;
+        int retries = 2;
 #endif
 
 	BUG_ON(!host);
@@ -1244,7 +1257,7 @@ static int mmc_sd_resume(struct mmc_host *host)
 
 	mmc_claim_host(host);
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
-	retries = 5;
+	retries = 2;
 	while (retries) {
 		err = mmc_sd_init_card(host, host->ocr, host->card);
 
@@ -1397,8 +1410,12 @@ int mmc_attach_sd(struct mmc_host *host)
 	 * Detect and init the card.
 	 */
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
-	retries = 5;
-	while (retries) {
+	retries = 2;
+	/*
+	 * Some bad cards may take a long time to init, give preference to
+	 * suspend in those cases.
+	 */
+	while (retries && !host->rescan_disable) {
 		err = mmc_sd_init_card(host, host->ocr, NULL);
 		if (err) {
 			retries--;
@@ -1416,6 +1433,9 @@ int mmc_attach_sd(struct mmc_host *host)
 		       mmc_hostname(host), err);
 		goto err;
 	}
+
+	if (host->rescan_disable)
+		goto err;
 #else
 	err = mmc_sd_init_card(host, host->ocr, NULL);
 	if (err)
@@ -1439,9 +1459,9 @@ remove_card:
 	mmc_claim_host(host);
 err:
 	mmc_detach_bus(host);
-
-	pr_err("%s: error %d whilst initialising SD card\n",
-		mmc_hostname(host), err);
+	if (err)
+		pr_err("%s: error %d whilst initialising SD card: rescan: %d\n",
+		       mmc_hostname(host), err, host->rescan_disable);
 
 	return err;
 }
